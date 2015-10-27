@@ -1,0 +1,54 @@
+This is a fork of the Go archive/zip package to add support
+for reading password protected AES encrypted files. Only supports
+Winzip's AES extension: http://www.winzip.com/aes_info.htm. This
+package DOES NOT intend to implement the encryption methods
+mentioned in the original PKWARE spec (sections 6.0 and 7.0):
+https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
+
+WinZip AES specifies
+====================================================================
+1. Encryption-Decryption w/ AES-CTR (128, 192, or 256 bits)
+2. Key generation with PBKDF2-HMAC-SHA1 (1000 iteration count) that
+generates a master key broken into the following:
+    a. First m bytes is for the encryption key
+    b. Next n bytes is for the authentication key
+    c. Last 2 bytes is the password verification value.
+3. Following salt lengths are used w/ password during keygen:
+    ------------------------------
+    AES Key Size    | Salt Size
+    ------------------------------
+    128bit(16bytes) | 8 bytes
+    192bit(24bytes) | 12 bytes
+    256bit(32bytes) | 16 bytes
+    -------------------------------
+4. Master key len = AESKeyLen + AuthKeyLen + PWVLen:
+    a. AES 128 = 16 + 16 + 2 = 34 bytes of key material
+    b. AES 192 = 24 + 24 + 2 = 50 bytes of key material
+    c. AES 256 = 32 + 32 + 2 = 66 bytes of key material
+5. Authentication Key is same size as AES key.
+6. Authentication with HMAC-SHA1-80 (truncated to 80bits).
+7. A new master key is generated for every file.
+8. The file header and directory header compression method will
+be 99 (decimal). The actual compression method will be in the
+extra's payload at the end of the directory header.
+9. A extra field will be added to the file header and directory
+header identified by 0x9901 and contains the following info:
+    a. Header ID (2 bytes)
+    b. Data Size (2 bytes)
+    c. Vendor Version (2 bytes)
+    d. Vendor ID (2 bytes)
+    e. AES Strength (1 byte)
+    f. Compression Method (2 bytes)
+10. The Data Size is always 7.
+11. The Vendor Version can either be 0x0001 (AE-1) or
+0x0002 (AE-2).
+12. Vendor ID is ASCII "AE"
+13. AES Strength:
+    a. 0x01 - AES-128
+    b. 0x02 - AES-192
+    c. 0x03 - AES-256
+14. Compression Method is the actual compression method
+used that was replaced by the encryption process.
+15. AE-1 keeps the CRC and should be verified after decompression.
+16. AE-2 removes the CRC and shouldn't be verified after decompression.
+Refer to http://www.winzip.com/aes_info.htm#winzip11 for the reasoning.
