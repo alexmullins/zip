@@ -39,8 +39,6 @@ generates a master key broken into the following:
 5. Authentication Key is same size as AES key.
 6. Authentication with HMAC-SHA1-80 (truncated to 80bits).
 7. A new master key is generated for every file.
-7.5. CTR IV = 01 and increases for each file. Everything I've read said
-it starts at 00 so I need clarification here. See winzipkeygen for example.
 8. The file header and directory header compression method will
 be 99 (decimal) indicating Winzip AES encryption. The actual
 compression method will be in the extra's payload at the end
