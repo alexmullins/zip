@@ -614,23 +614,17 @@ func TestSimplePassword(t *testing.T) {
 		t.Errorf("Expected %s to open: %v.", file, err)
 	}
 	defer r.Close()
-
 	if len(r.File) != 1 {
 		t.Errorf("Expected %s to contain one file.", file)
 	}
-
 	f := r.File[0]
-
 	if f.FileInfo().Name() != "hello.txt" {
 		t.Errorf("Expected %s to have a file named hello.txt", file)
 	}
-
 	if f.Method != 0 {
 		t.Errorf("Expected %s to have its Method set to 0.", file)
 	}
-
 	f.SetPassword([]byte("golang"))
-
 	rc, err := f.Open()
 	if err != nil {
 		t.Errorf("Expected to open the readcloser: %v.", err)
@@ -639,8 +633,36 @@ func TestSimplePassword(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected to copy bytes: %v.", err)
 	}
-
 	if !bytes.Contains(buf.Bytes(), []byte("Hello World\r\n")) {
 		t.Errorf("Expected contents were not found.")
+	}
+}
+
+func TestHelloWorldAes(t *testing.T) {
+	file := "world-aes.zip"
+	expecting := "helloworld"
+	r, err := OpenReader(filepath.Join("testdata", file))
+	if err != nil {
+		t.Errorf("Expected %s to open: %v", file, err)
+	}
+	defer r.Close()
+	if len(r.File) != 2 {
+		t.Errorf("Expected %s to contain two files.", file)
+	}
+	var b bytes.Buffer
+	for _, f := range r.File {
+		if !f.IsEncrypted() {
+			t.Errorf("Expected %s to be encrypted.", f.FileInfo().Name)
+		}
+		f.SetPassword([]byte("golang"))
+		rc, err := f.Open()
+		if err != nil {
+			t.Errorf("Expected to open readcloser: %v", err)
+		}
+		defer rc.Close()
+		io.Copy(&b, rc)
+	}
+	if !bytes.Equal([]byte(expecting), b.Bytes()) {
+		t.Errorf("Expected ending content to be %s instead of %s", expecting, b.Bytes())
 	}
 }
