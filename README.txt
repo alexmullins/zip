@@ -64,3 +64,8 @@ used that was replaced by the encryption process mentioned in #8.
 15. AE-1 keeps the CRC and should be verified after decompression.
 AE-2 removes the CRC and shouldn't be verified after decompression.
 Refer to http://www.winzip.com/aes_info.htm#winzip11 for the reasoning.
+16. Storage Format (file data payload):
+    a. Salt - 8, 12, or 16 bytes depending on keysize
+    b. Password Verification Value - 2 bytes
+    c. Encrypted Data - UncompressedSize bytes
+    d. Authentication code - 10 bytes
