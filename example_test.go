@@ -5,12 +5,13 @@
 package zip_test
 
 import (
-	"archive/zip"
 	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"os"
+
+	"github.com/alexmullins/zip"
 )
 
 func ExampleWriter() {
@@ -57,6 +58,9 @@ func ExampleReader() {
 	// Iterate through the files in the archive,
 	// printing some of their contents.
 	for _, f := range r.File {
+		// if f.IsEncrypted() {
+		// 	f.SetPassword([]byte("password"))
+		// }
 		fmt.Printf("Contents of %s:\n", f.Name)
 		rc, err := f.Open()
 		if err != nil {
