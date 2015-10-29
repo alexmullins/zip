@@ -5,6 +5,17 @@ package DOES NOT intend to implement the encryption methods
 mentioned in the original PKWARE spec (sections 6.0 and 7.0):
 https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 
+The process
+==============================================================================
+hello.txt -> compress -> encrypt -> .zip -> decrypt -> decompress -> hello.txt
+
+Roadmap
+================================================
+Reading - Almost done (TODO: check for AE-2 and skip CRC).
+Writing - Not started.
+Testing - Needs more.
+
+
 WinZip AES specifies
 ====================================================================
 1. Encryption-Decryption w/ AES-CTR (128, 192, or 256 bits)

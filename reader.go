@@ -6,19 +6,28 @@ package zip
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
+	"io/ioutil"
 	"os"
+
+	"golang.org/x/crypto/pbkdf2"
 )
 
 var (
-	ErrFormat    = errors.New("zip: not a valid zip file")
-	ErrAlgorithm = errors.New("zip: unsupported compression algorithm")
-	ErrChecksum  = errors.New("zip: checksum error")
+	ErrFormat     = errors.New("zip: not a valid zip file")
+	ErrAlgorithm  = errors.New("zip: unsupported compression algorithm")
+	ErrChecksum   = errors.New("zip: checksum error")
+	ErrDecryption = errors.New("zip: decryption error")
 )
 
 type Reader struct {
@@ -37,6 +46,32 @@ type File struct {
 	zipr         io.ReaderAt
 	zipsize      int64
 	headerOffset int64
+	password     []byte
+	ae           uint16
+	aesStrength  byte
+}
+
+func aesKeyLen(strength byte) int {
+	switch strength {
+	case 1:
+		return aes128
+	case 2:
+		return aes192
+	case 3:
+		return aes256
+	default:
+		return 0
+	}
+}
+
+// SetPassword must be called before calling Open on the file.
+func (f *File) SetPassword(password []byte) {
+	f.password = password
+}
+
+// IsEncrypted indicates whether this file's data is encrypted.
+func (f *File) IsEncrypted() bool {
+	return f.Flags&0x1 == 1
 }
 
 func (f *File) hasDataDescriptor() bool {
@@ -138,8 +173,17 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 	if err != nil {
 		return
 	}
+	// If f is encrypted, CompressedSize64 includes salt, pwvv, encrypted data,
+	// and auth code lengths
 	size := int64(f.CompressedSize64)
-	r := io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, size)
+	var r io.Reader
+	r = io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, size)
+	// check for encryption
+	if f.IsEncrypted() {
+		if r, err = newDecryptionReader(r, f); err != nil {
+			return
+		}
+	}
 	dcomp := decompressor(f.Method)
 	if dcomp == nil {
 		err = ErrAlgorithm
@@ -150,12 +194,82 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 	if f.hasDataDescriptor() {
 		desr = io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset+size, dataDescriptorLen)
 	}
+	// TODO: if AE-2, skip CRC
 	rc = &checksumReader{
 		rc:   rc,
 		hash: crc32.NewIEEE(),
 		f:    f,
 		desr: desr,
 	}
+	return
+}
+
+func newDecryptionReader(r io.Reader, f *File) (io.ReadCloser, error) {
+	keyLen := aesKeyLen(f.aesStrength)
+	saltLen := keyLen / 2 // salt is half of key len
+	if saltLen == 0 {
+		return nil, ErrDecryption
+	}
+
+	content := make([]byte, f.CompressedSize64)
+	if _, err := io.ReadFull(r, content); err != nil {
+		return nil, ErrDecryption
+	}
+
+	// grab the salt, pwvv, data, and authcode
+	salt := content[:saltLen]
+	pwvv := content[saltLen : saltLen+2]
+	content = content[saltLen+2:]
+	size := f.UncompressedSize64
+	data := content[:size]
+	authcode := content[size:]
+
+	// generate keys
+	decKey, authKey, pwv := generateKeys(f.password, salt, keyLen)
+
+	// check password verifier (pwv)
+	if !bytes.Equal(pwv, pwvv) {
+		return nil, ErrDecryption
+	}
+
+	// check authentication
+	if !checkAuthentication(data, authcode, authKey) {
+		return nil, ErrDecryption
+	}
+
+	// set the IV
+	var iv [aes.BlockSize]byte
+	iv[0] = 1
+
+	return decryptStream(data, decKey, iv[:]), nil
+}
+
+func decryptStream(ciphertext, key, iv []byte) io.ReadCloser {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil
+	}
+	stream := cipher.NewCTR(block, iv)
+	reader := cipher.StreamReader{S: stream, R: bytes.NewReader(ciphertext)}
+	return ioutil.NopCloser(reader)
+}
+
+func checkAuthentication(message, authcode, key []byte) bool {
+	mac := hmac.New(sha1.New, key)
+	mac.Write(message)
+	expectedAuthCode := mac.Sum(nil)
+	// Truncate at the first 10 bytes
+	expectedAuthCode = expectedAuthCode[:10]
+	return bytes.Equal(expectedAuthCode, authcode)
+}
+
+func generateKeys(password, salt []byte, keySize int) (encKey, authKey, pwv []byte) {
+	totalSize := (keySize * 2) + 2 // enc + auth + pv sizes
+
+	key := pbkdf2.Key(password, salt, 1000, totalSize, sha1.New)
+	encKey = key[:keySize]
+	authKey = key[keySize : keySize*2]
+	pwv = key[keySize*2:]
 	return
 }
 
@@ -269,9 +383,10 @@ func readDirectoryHeader(f *File, r io.Reader) error {
 			if int(size) > len(b) {
 				return ErrFormat
 			}
-			if tag == zip64ExtraId {
+			eb := readBuf(b[:size])
+			switch tag {
+			case zip64ExtraId:
 				// update directory values from the zip64 extra block
-				eb := readBuf(b[:size])
 				if len(eb) >= 8 {
 					f.UncompressedSize64 = eb.uint64()
 				}
@@ -281,6 +396,18 @@ func readDirectoryHeader(f *File, r io.Reader) error {
 				if len(eb) >= 8 {
 					f.headerOffset = int64(eb.uint64())
 				}
+			case winzipAesExtraId:
+				// grab the AE version
+				f.ae = eb.uint16()
+
+				// skip vendor ID
+				_ = eb.uint16()
+
+				// AES strength
+				f.aesStrength = eb.uint8()
+
+				// set the actual compression method.
+				f.Method = eb.uint16()
 			}
 			b = b[size:]
 		}
@@ -451,6 +578,12 @@ func findSignatureInBlock(b []byte) int {
 }
 
 type readBuf []byte
+
+func (b *readBuf) uint8() byte {
+	v := (*b)[0]
+	*b = (*b)[1:]
+	return v
+}
 
 func (b *readBuf) uint16() uint16 {
 	v := binary.LittleEndian.Uint16(*b)

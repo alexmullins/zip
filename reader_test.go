@@ -605,3 +605,42 @@ func TestIssue11146(t *testing.T) {
 	}
 	r.Close()
 }
+
+func TestSimplePassword(t *testing.T) {
+	file := "hello-aes.zip"
+	var buf bytes.Buffer
+	r, err := OpenReader(filepath.Join("testdata", file))
+	if err != nil {
+		t.Errorf("Expected %s to open: %v.", file, err)
+	}
+	defer r.Close()
+
+	if len(r.File) != 1 {
+		t.Errorf("Expected %s to contain one file.", file)
+	}
+
+	f := r.File[0]
+
+	if f.FileInfo().Name() != "hello.txt" {
+		t.Errorf("Expected %s to have a file named hello.txt", file)
+	}
+
+	if f.Method != 0 {
+		t.Errorf("Expected %s to have its Method set to 0.", file)
+	}
+
+	f.SetPassword([]byte("golang"))
+
+	rc, err := f.Open()
+	if err != nil {
+		t.Errorf("Expected to open the readcloser: %v.", err)
+	}
+	_, err = io.Copy(&buf, rc)
+	if err != nil {
+		t.Errorf("Expected to copy bytes: %v.", err)
+	}
+
+	if !bytes.Contains(buf.Bytes(), []byte("Hello World\r\n")) {
+		t.Errorf("Expected contents were not found.")
+	}
+}
