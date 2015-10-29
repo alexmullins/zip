@@ -17,7 +17,6 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"golang.org/x/crypto/pbkdf2"
@@ -190,11 +189,11 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 		return
 	}
 	rc = dcomp(r)
+	// TODO: if AE-2, skip CRC and possible dataDescriptor
 	var desr io.Reader
 	if f.hasDataDescriptor() {
 		desr = io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset+size, dataDescriptorLen)
 	}
-	// TODO: if AE-2, skip CRC
 	rc = &checksumReader{
 		rc:   rc,
 		hash: crc32.NewIEEE(),
@@ -204,18 +203,17 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 	return
 }
 
-func newDecryptionReader(r io.Reader, f *File) (io.ReadCloser, error) {
+func newDecryptionReader(r io.Reader, f *File) (io.Reader, error) {
 	keyLen := aesKeyLen(f.aesStrength)
 	saltLen := keyLen / 2 // salt is half of key len
 	if saltLen == 0 {
 		return nil, ErrDecryption
 	}
-
+	// Is there a better method than reading in the entire contents?
 	content := make([]byte, f.CompressedSize64)
 	if _, err := io.ReadFull(r, content); err != nil {
 		return nil, ErrDecryption
 	}
-
 	// grab the salt, pwvv, data, and authcode
 	salt := content[:saltLen]
 	pwvv := content[saltLen : saltLen+2]
@@ -223,35 +221,31 @@ func newDecryptionReader(r io.Reader, f *File) (io.ReadCloser, error) {
 	size := f.UncompressedSize64
 	data := content[:size]
 	authcode := content[size:]
-
 	// generate keys
 	decKey, authKey, pwv := generateKeys(f.password, salt, keyLen)
-
 	// check password verifier (pwv)
 	if !bytes.Equal(pwv, pwvv) {
 		return nil, ErrDecryption
 	}
-
 	// check authentication
 	if !checkAuthentication(data, authcode, authKey) {
 		return nil, ErrDecryption
 	}
-
 	// set the IV
+	// see: https://forum.golangbridge.org/t/iv-counter-help-for-aes-ctr/1369
 	var iv [aes.BlockSize]byte
 	iv[0] = 1
-
 	return decryptStream(data, decKey, iv[:]), nil
 }
 
-func decryptStream(ciphertext, key, iv []byte) io.ReadCloser {
+func decryptStream(ciphertext, key, iv []byte) io.Reader {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil
 	}
 	stream := cipher.NewCTR(block, iv)
 	reader := cipher.StreamReader{S: stream, R: bytes.NewReader(ciphertext)}
-	return ioutil.NopCloser(reader)
+	return reader
 }
 
 func checkAuthentication(message, authcode, key []byte) bool {
@@ -399,13 +393,10 @@ func readDirectoryHeader(f *File, r io.Reader) error {
 			case winzipAesExtraId:
 				// grab the AE version
 				f.ae = eb.uint16()
-
 				// skip vendor ID
 				_ = eb.uint16()
-
 				// AES strength
 				f.aesStrength = eb.uint8()
-
 				// set the actual compression method.
 				f.Method = eb.uint16()
 			}
