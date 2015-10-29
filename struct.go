@@ -16,6 +16,9 @@ fields. The 64 bit fields will always contain the correct value and
 for normal archives both fields will be the same. For files requiring
 the ZIP64 format the 32 bit fields will be 0xffffffff and the 64 bit
 fields must be used instead.
+
+Can read/write AES encrypted files that use Winzip's AES encryption method.
+See: http://www.winzip.com/aes_info.htm
 */
 package zip
 
