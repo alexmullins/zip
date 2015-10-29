@@ -10,14 +10,14 @@ The process
 hello.txt -> compress -> encrypt -> .zip -> decrypt -> decompress -> hello.txt
 
 Roadmap
-================================================
+==============================================================================
 Reading - Almost done (TODO: check for AE-2 and skip CRC).
 Writing - Not started.
 Testing - Needs more.
 
 
 WinZip AES specifies
-====================================================================
+==============================================================================
 1. Encryption-Decryption w/ AES-CTR (128, 192, or 256 bits)
 2. Key generation with PBKDF2-HMAC-SHA1 (1000 iteration count) that
 generates a master key broken into the following:
