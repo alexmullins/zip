@@ -1,5 +1,5 @@
 This is a fork of the Go archive/zip package to add support
-for reading password protected AES encrypted files. Only supports
+for reading/writing password protected AES encrypted files. Only supports
 Winzip's AES extension: http://www.winzip.com/aes_info.htm. This
 package DOES NOT intend to implement the encryption methods
 mentioned in the original PKWARE spec (sections 6.0 and 7.0):
