@@ -11,7 +11,7 @@ hello.txt -> compress -> encrypt -> .zip -> decrypt -> decompress -> hello.txt
 
 Roadmap
 ==============================================================================
-Reading - Almost done (TODO: check for AE-2 and skip CRC).
+Reading - Working on it. Some bugs to work out (TODO: check for AE-2 and skip CRC).
 Writing - Not started.
 Testing - Needs more.
 

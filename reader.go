@@ -244,6 +244,7 @@ func decryptStream(ciphertext, key, iv []byte) io.Reader {
 		return nil
 	}
 	stream := cipher.NewCTR(block, iv)
+	// Not decrypting stream correctly if the number of bytes being read is >16
 	reader := cipher.StreamReader{S: stream, R: bytes.NewReader(ciphertext)}
 	return reader
 }

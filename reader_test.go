@@ -660,9 +660,39 @@ func TestHelloWorldAes(t *testing.T) {
 			t.Errorf("Expected to open readcloser: %v", err)
 		}
 		defer rc.Close()
-		io.Copy(&b, rc)
+		if _, err := io.Copy(&b, rc); err != nil {
+			t.Errorf("Expected to copy bytes to buffer: %v", err)
+		}
 	}
 	if !bytes.Equal([]byte(expecting), b.Bytes()) {
 		t.Errorf("Expected ending content to be %s instead of %s", expecting, b.Bytes())
+	}
+}
+
+func TestMacbethAct1(t *testing.T) {
+	file := "macbeth-act1.zip"
+	expecting := "Exeunt"
+	var b bytes.Buffer
+	r, err := OpenReader(filepath.Join("testdata", file))
+	if err != nil {
+		t.Errorf("Expected %s to open: %v", file, err)
+	}
+	defer r.Close()
+	for _, f := range r.File {
+		if !f.IsEncrypted() {
+			t.Errorf("Expected %s to be encrypted.", f.Name)
+		}
+		f.SetPassword([]byte("golang"))
+		rc, err := f.Open()
+		if err != nil {
+			t.Errorf("Expected to open readcloser: %v", err)
+		}
+		defer rc.Close()
+		if _, err := io.Copy(&b, rc); err != nil {
+			t.Errorf("Expected to copy bytes to buffer: %v", err)
+		}
+	}
+	if !bytes.Contains(b.Bytes(), []byte(expecting)) {
+		t.Errorf("Expected to find %s in the buffer %v", expecting, b.Bytes())
 	}
 }
