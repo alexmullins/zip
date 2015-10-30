@@ -218,7 +218,7 @@ func newDecryptionReader(r io.Reader, f *File) (io.Reader, error) {
 	salt := content[:saltLen]
 	pwvv := content[saltLen : saltLen+2]
 	content = content[saltLen+2:]
-	size := f.UncompressedSize64
+	size := f.CompressedSize64 - uint64(saltLen) - 2 - 10
 	data := content[:size]
 	authcode := content[size:]
 	// generate keys

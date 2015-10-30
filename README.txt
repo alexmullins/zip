@@ -67,5 +67,5 @@ Refer to http://www.winzip.com/aes_info.htm#winzip11 for the reasoning.
 16. Storage Format (file data payload) totals CompressedSize64 bytes:
     a. Salt - 8, 12, or 16 bytes depending on keysize
     b. Password Verification Value - 2 bytes
-    c. Encrypted Data - UncompressedSize64 bytes
+    c. Encrypted Data - compressed size - satl - pwv - auth lengths
     d. Authentication code - 10 bytes
