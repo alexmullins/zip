@@ -11,10 +11,7 @@ hello.txt -> compress -> encrypt -> .zip -> decrypt -> decompress -> hello.txt
 
 Roadmap
 ==============================================================================
-Reading - Working on it. Seems like the AES-CTR counter incrementer for WinZip
-encryption follows a little-endian, left-aligned counter whereas Go's AES-CTR
-implementation is big-endian, right-aligned counter. Will have to read block by
-block and increment the counter by hand.
+Reading - Works. See ctr.go for implementation.
 Writing - Not started.
 Testing - Needs more.
 

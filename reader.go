@@ -231,19 +231,16 @@ func newDecryptionReader(r io.Reader, f *File) (io.Reader, error) {
 	if !checkAuthentication(data, authcode, authKey) {
 		return nil, ErrDecryption
 	}
-	// set the IV
-	// see: https://forum.golangbridge.org/t/iv-counter-help-for-aes-ctr/1369
-	var iv [aes.BlockSize]byte
-	iv[0] = 1
-	return decryptStream(data, decKey, iv[:]), nil
+
+	return decryptStream(data, decKey), nil
 }
 
-func decryptStream(ciphertext, key, iv []byte) io.Reader {
+func decryptStream(ciphertext, key []byte) io.Reader {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil
 	}
-	stream := cipher.NewCTR(block, iv)
+	stream := NewWinZipCTR(block)
 	// Not decrypting stream correctly if the number of bytes being read is >16
 	reader := cipher.StreamReader{S: stream, R: bytes.NewReader(ciphertext)}
 	return reader
