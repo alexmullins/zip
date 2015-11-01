@@ -11,9 +11,12 @@ hello.txt -> compress -> encrypt -> .zip -> decrypt -> decompress -> hello.txt
 
 Roadmap
 ==============================================================================
-Reading - Works. See ctr.go for implementation.
+Reading - Done. TODO:
+    1.Change to streaming authentication and decryption
+    2.Check for AE-2 and skip CRC check to align with WinZip spec.
 Writing - Not started.
 Testing - Needs more.
+
 
 
 WinZip AES specifies
@@ -67,5 +70,5 @@ Refer to http://www.winzip.com/aes_info.htm#winzip11 for the reasoning.
 16. Storage Format (file data payload) totals CompressedSize64 bytes:
     a. Salt - 8, 12, or 16 bytes depending on keysize
     b. Password Verification Value - 2 bytes
-    c. Encrypted Data - compressed size - satl - pwv - auth lengths
+    c. Encrypted Data - compressed size - salt - pwv - auth lengths
     d. Authentication code - 10 bytes

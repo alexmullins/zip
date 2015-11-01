@@ -209,7 +209,7 @@ func newDecryptionReader(r io.Reader, f *File) (io.Reader, error) {
 	if saltLen == 0 {
 		return nil, ErrDecryption
 	}
-	// Is there a better method than reading in the entire contents?
+	// Change to a streaming
 	content := make([]byte, f.CompressedSize64)
 	if _, err := io.ReadFull(r, content); err != nil {
 		return nil, ErrDecryption
@@ -240,7 +240,7 @@ func decryptStream(ciphertext, key []byte) io.Reader {
 	if err != nil {
 		return nil
 	}
-	stream := NewWinZipCTR(block)
+	stream := newWinZipCTR(block)
 	// Not decrypting stream correctly if the number of bytes being read is >16
 	reader := cipher.StreamReader{S: stream, R: bytes.NewReader(ciphertext)}
 	return reader

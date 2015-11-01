@@ -30,7 +30,7 @@ const streamBufferSize = 512
 
 // NewWinZipCTR returns a Stream which encrypts/decrypts using the given Block in
 // counter mode. The counter is initially set to 1.
-func NewWinZipCTR(block cipher.Block) cipher.Stream {
+func newWinZipCTR(block cipher.Block) cipher.Stream {
 	bufSize := streamBufferSize
 	if bufSize < block.BlockSize() {
 		bufSize = block.BlockSize()
