@@ -6,11 +6,6 @@ package zip
 
 import (
 	"bufio"
-	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hmac"
-	"crypto/sha1"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -18,8 +13,6 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
-
-	"golang.org/x/crypto/pbkdf2"
 )
 
 var (
@@ -48,19 +41,6 @@ type File struct {
 	password     []byte
 	ae           uint16
 	aesStrength  byte
-}
-
-func aesKeyLen(strength byte) int {
-	switch strength {
-	case 1:
-		return aes128
-	case 2:
-		return aes192
-	case 3:
-		return aes256
-	default:
-		return 0
-	}
 }
 
 // SetPassword must be called before calling Open on the file.
@@ -200,68 +180,6 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 		f:    f,
 		desr: desr,
 	}
-	return
-}
-
-func newDecryptionReader(r io.Reader, f *File) (io.Reader, error) {
-	keyLen := aesKeyLen(f.aesStrength)
-	saltLen := keyLen / 2 // salt is half of key len
-	if saltLen == 0 {
-		return nil, ErrDecryption
-	}
-	// Change to a streaming
-	content := make([]byte, f.CompressedSize64)
-	if _, err := io.ReadFull(r, content); err != nil {
-		return nil, ErrDecryption
-	}
-	// grab the salt, pwvv, data, and authcode
-	salt := content[:saltLen]
-	pwvv := content[saltLen : saltLen+2]
-	content = content[saltLen+2:]
-	size := f.CompressedSize64 - uint64(saltLen) - 2 - 10
-	data := content[:size]
-	authcode := content[size:]
-	// generate keys
-	decKey, authKey, pwv := generateKeys(f.password, salt, keyLen)
-	// check password verifier (pwv)
-	if !bytes.Equal(pwv, pwvv) {
-		return nil, ErrDecryption
-	}
-	// check authentication
-	if !checkAuthentication(data, authcode, authKey) {
-		return nil, ErrDecryption
-	}
-
-	return decryptStream(data, decKey), nil
-}
-
-func decryptStream(ciphertext, key []byte) io.Reader {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil
-	}
-	stream := newWinZipCTR(block)
-	// Not decrypting stream correctly if the number of bytes being read is >16
-	reader := cipher.StreamReader{S: stream, R: bytes.NewReader(ciphertext)}
-	return reader
-}
-
-func checkAuthentication(message, authcode, key []byte) bool {
-	mac := hmac.New(sha1.New, key)
-	mac.Write(message)
-	expectedAuthCode := mac.Sum(nil)
-	// Truncate at the first 10 bytes
-	expectedAuthCode = expectedAuthCode[:10]
-	return bytes.Equal(expectedAuthCode, authcode)
-}
-
-func generateKeys(password, salt []byte, keySize int) (encKey, authKey, pwv []byte) {
-	totalSize := (keySize * 2) + 2 // enc + auth + pv sizes
-
-	key := pbkdf2.Key(password, salt, 1000, totalSize, sha1.New)
-	encKey = key[:keySize]
-	authKey = key[keySize : keySize*2]
-	pwv = key[keySize*2:]
 	return
 }
 

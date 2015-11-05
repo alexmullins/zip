@@ -696,3 +696,6 @@ func TestMacbethAct1(t *testing.T) {
 		t.Errorf("Expected to find %s in the buffer %v", expecting, b.Bytes())
 	}
 }
+
+// Test for AE-1 vs AE-2
+// Test for tampered data payload, use messWith

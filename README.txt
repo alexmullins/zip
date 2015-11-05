@@ -1,22 +1,26 @@
 This is a fork of the Go archive/zip package to add support
-for reading/writing password protected AES encrypted files. Only supports
-Winzip's AES extension: http://www.winzip.com/aes_info.htm. This
-package DOES NOT intend to implement the encryption methods
+for reading/writing password protected .zip files.
+Only supports Winzip's AES extension: http://www.winzip.com/aes_info.htm.
+
+This package DOES NOT intend to implement the encryption methods
 mentioned in the original PKWARE spec (sections 6.0 and 7.0):
 https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 
+
 The process
 ==============================================================================
-hello.txt -> compress -> encrypt -> .zip -> decrypt -> decompress -> hello.txt
+hello.txt -> compressed -> encrypted -> .zip -> decrypted -> decompressed -> hello.txt
+
 
 Roadmap
 ==============================================================================
-Reading - Done. TODO:
-    1.Change to streaming authentication and decryption
-    2.Check for AE-2 and skip CRC check to align with WinZip spec.
+Reading - Done.
+    TODO:
+    1. Change to streaming authentication and decryption. (Maybe not such a good
+    idea: https://www.imperialviolet.org/2014/06/27/streamingencryption.html)
+    2. Check for AE-2 and skip CRC check to match with WinZip spec.
 Writing - Not started.
 Testing - Needs more.
-
 
 
 WinZip AES specifies
