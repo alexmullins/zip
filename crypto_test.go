@@ -100,3 +100,4 @@ func TestPasswordMacbethAct1(t *testing.T) {
 
 // Test for AE-1 vs AE-2
 // Test for tampered data payload, use messWith
+// Test streaming vs buffered reading

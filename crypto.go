@@ -12,6 +12,7 @@ import (
 	"crypto/sha1"
 	"crypto/subtle"
 	"errors"
+	"hash"
 	"io"
 	"io/ioutil"
 
@@ -119,48 +120,98 @@ func xorBytes(dst, a, b []byte) int {
 }
 
 type authReader struct {
-	data  io.Reader     // data to be authenticated
-	adata io.Reader     // the authentication code to read
-	akey  []byte        // authentication key
-	buf   *bytes.Buffer // buffer to store data to authenticate
+	data  io.Reader // data to be authenticated
+	adata io.Reader // the authentication code to read
+	mac   hash.Hash // hmac hash
 	err   error
 	auth  bool
 }
 
-func newAuthReader(akey []byte, data, adata io.Reader) io.Reader {
-	return &authReader{
+// Streaming authentication
+func (a *authReader) Read(p []byte) (int, error) {
+	if a.err != nil {
+		return 0, a.err
+	}
+	end := false
+	// read underlying data
+	n, err := a.data.Read(p)
+	if err != nil && err != io.EOF {
+		a.err = err
+		return n, a.err
+	} else if err == io.EOF {
+		// if we are at the end, calculate the mac
+		end = true
+		a.err = err
+	}
+	// write any data to mac
+	nn, err := a.mac.Write(p[:n])
+	if nn != n || err != nil {
+		a.err = ErrDecryption
+		return nn, a.err
+	}
+	if end {
+		ab := new(bytes.Buffer)
+		_, err = io.Copy(ab, a.adata)
+		if err != nil || ab.Len() != 10 {
+			a.err = ErrDecryption
+			return n, a.err
+		}
+		if !a.checkAuthentication(ab.Bytes()) {
+			a.err = ErrDecryption
+			return n, a.err
+		}
+	}
+	return n, a.err
+}
+
+// newAuthReader returns either a buffered or streaming authentication reader.
+// Buffered authentication is recommended. Streaming authentication is only
+// recommended if: 1. you buffer the data yourself and wait for authentication
+// before streaming to another source such as the network, or 2. you just don't
+// care about authenticating unknown ciphertext before use :).
+func newAuthReader(akey []byte, data, adata io.Reader, streaming bool) io.Reader {
+	ar := authReader{
 		data:  data,
 		adata: adata,
-		akey:  akey,
-		buf:   new(bytes.Buffer),
+		mac:   hmac.New(sha1.New, akey),
 		err:   nil,
 		auth:  false,
 	}
+	if streaming {
+		return &ar
+	}
+	return &bufferedAuthReader{
+		ar,
+		new(bytes.Buffer),
+	}
 }
 
-// Read will fully buffer the file data payload to authenticate first.
-// If authentication fails, returns ErrDecryption immediately.
-// Else, sends data along for decryption.
-func (a *authReader) Read(b []byte) (int, error) {
+type bufferedAuthReader struct {
+	authReader
+	buf *bytes.Buffer // buffer to store data to authenticate
+}
+
+// buffered authentication
+func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 	// check for sticky error
 	if a.err != nil {
 		return 0, a.err
 	}
 	// make sure we have auth'ed before we send any data
 	if !a.auth {
-		nn, err := io.Copy(a.buf, a.data)
+		_, err := io.Copy(a.buf, a.data)
 		if err != nil {
 			a.err = ErrDecryption
 			return 0, a.err
 		}
 		ab := new(bytes.Buffer)
-		nn, err = io.Copy(ab, a.adata)
+		nn, err := io.Copy(ab, a.adata)
 		if err != nil || nn != 10 {
 			a.err = ErrDecryption
 			return 0, a.err
 		}
-		a.auth = checkAuthentication(a.buf.Bytes(), ab.Bytes(), a.akey)
-		if !a.auth {
+		a.mac.Write(a.buf.Bytes())
+		if !a.checkAuthentication(ab.Bytes()) {
 			a.err = ErrDecryption
 			return 0, a.err
 		}
@@ -173,15 +224,13 @@ func (a *authReader) Read(b []byte) (int, error) {
 	return n, a.err
 }
 
-func checkAuthentication(message, authcode, key []byte) bool {
-	mac := hmac.New(sha1.New, key)
-	mac.Write(message)
-	expectedAuthCode := mac.Sum(nil)
+func (a *authReader) checkAuthentication(authcode []byte) bool {
+	expectedAuthCode := a.mac.Sum(nil)
 	// Truncate at the first 10 bytes
 	expectedAuthCode = expectedAuthCode[:10]
 	// Change to use crypto/subtle for constant time comparison
-	b := subtle.ConstantTimeCompare(expectedAuthCode, authcode) > 0
-	return b
+	a.auth = subtle.ConstantTimeCompare(expectedAuthCode, authcode) > 0
+	return a.auth
 }
 
 func checkPasswordVerification(pwvv, pwv []byte) bool {
@@ -205,8 +254,7 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.ReadCloser, error) {
 		return nil, ErrDecryption
 	}
 	// Change to a streaming implementation
-	// Maybe not such a good idea after all.
-	// See:
+	// Maybe not such a good idea after all. See:
 	// https://www.imperialviolet.org/2014/06/27/streamingencryption.html
 	// https://www.imperialviolet.org/2015/05/16/aeads.html
 	// grab the salt, pwvv, data, and authcode
@@ -216,11 +264,6 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.ReadCloser, error) {
 	}
 	salt := saltpwvv[:saltLen]
 	pwvv := saltpwvv[saltLen : saltLen+2]
-	dataOff := int64(saltLen + 2)
-	dataLen := int64(f.CompressedSize64 - uint64(saltLen) - 2 - 10)
-	data := io.NewSectionReader(r, dataOff, dataLen)
-	authOff := dataOff + dataLen
-	authcode := io.NewSectionReader(r, authOff, 10)
 	// generate keys
 	decKey, authKey, pwv := generateKeys(f.password, salt, keyLen)
 	// check password verifier (pwv)
@@ -228,8 +271,13 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.ReadCloser, error) {
 	if !checkPasswordVerification(pwv, pwvv) {
 		return nil, ErrDecryption
 	}
-	// setup auth reader
-	ar := newAuthReader(authKey, data, authcode)
+	dataOff := int64(saltLen + 2)
+	dataLen := int64(f.CompressedSize64 - uint64(saltLen) - 2 - 10)
+	data := io.NewSectionReader(r, dataOff, dataLen)
+	authOff := dataOff + dataLen
+	authcode := io.NewSectionReader(r, authOff, 10)
+	// setup auth reader, (buffered)/streaming
+	ar := newAuthReader(authKey, data, authcode, false)
 	// return decryption reader
 	dr := decryptStream(decKey, ar)
 	return ioutil.NopCloser(dr), nil
