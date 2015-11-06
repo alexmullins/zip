@@ -14,7 +14,6 @@ import (
 	"errors"
 	"hash"
 	"io"
-	"io/ioutil"
 
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -247,7 +246,7 @@ func generateKeys(password, salt []byte, keySize int) (encKey, authKey, pwv []by
 	return
 }
 
-func newDecryptionReader(r *io.SectionReader, f *File) (io.ReadCloser, error) {
+func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	keyLen := aesKeyLen(f.aesStrength)
 	saltLen := keyLen / 2 // salt is half of key len
 	if saltLen == 0 {
@@ -280,7 +279,7 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.ReadCloser, error) {
 	ar := newAuthReader(authKey, data, authcode, false)
 	// return decryption reader
 	dr := decryptStream(decKey, ar)
-	return ioutil.NopCloser(dr), nil
+	return dr, nil
 }
 
 func decryptStream(key []byte, ciphertext io.Reader) io.Reader {
