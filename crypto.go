@@ -147,7 +147,7 @@ func (a *authReader) Read(p []byte) (int, error) {
 	nn, err := a.mac.Write(p[:n])
 	if nn != n || err != nil {
 		a.err = ErrDecryption
-		return nn, a.err
+		return n, a.err
 	}
 	if end {
 		ab := new(bytes.Buffer)
