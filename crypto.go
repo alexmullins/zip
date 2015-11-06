@@ -209,7 +209,11 @@ func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 			a.err = ErrDecryption
 			return 0, a.err
 		}
-		a.mac.Write(a.buf.Bytes())
+		mn, err := a.mac.Write(a.buf.Bytes())
+		if mn != a.buf.Len() || err != nil {
+			a.err = ErrDecryption
+			return 0, a.err
+		}
 		if !a.checkAuthentication(ab.Bytes()) {
 			a.err = ErrDecryption
 			return 0, a.err
