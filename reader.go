@@ -16,10 +16,9 @@ import (
 )
 
 var (
-	ErrFormat     = errors.New("zip: not a valid zip file")
-	ErrAlgorithm  = errors.New("zip: unsupported compression algorithm")
-	ErrChecksum   = errors.New("zip: checksum error")
-	ErrDecryption = errors.New("zip: decryption error")
+	ErrFormat    = errors.New("zip: not a valid zip file")
+	ErrAlgorithm = errors.New("zip: unsupported compression algorithm")
+	ErrChecksum  = errors.New("zip: checksum error")
 )
 
 type Reader struct {
@@ -51,6 +50,10 @@ func (f *File) SetPassword(password []byte) {
 // IsEncrypted indicates whether this file's data is encrypted.
 func (f *File) IsEncrypted() bool {
 	return f.Flags&0x1 == 1
+}
+
+func (f *File) isAE2() bool {
+	return f.ae == 2
 }
 
 func (f *File) hasDataDescriptor() bool {
@@ -156,12 +159,14 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 	// and auth code lengths
 	size := int64(f.CompressedSize64)
 	var r io.Reader
-	r = io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, size)
+	rr := io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset, size)
 	// check for encryption
 	if f.IsEncrypted() {
-		if r, err = newDecryptionReader(r, f); err != nil {
+		if r, err = newDecryptionReader(rr, f); err != nil {
 			return
 		}
+	} else {
+		r = rr
 	}
 	dcomp := decompressor(f.Method)
 	if dcomp == nil {
@@ -174,6 +179,14 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 	if f.hasDataDescriptor() {
 		desr = io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset+size, dataDescriptorLen)
 	}
+	// if !f.isAE2() {
+	// 	rc = &checksumReader{
+	// 		rc:   rc,
+	// 		hash: crc32.NewIEEE(),
+	// 		f:    f,
+	// 		desr: desr,
+	// 	}
+	// }
 	rc = &checksumReader{
 		rc:   rc,
 		hash: crc32.NewIEEE(),

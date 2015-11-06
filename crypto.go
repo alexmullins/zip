@@ -10,13 +10,20 @@ import (
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/subtle"
+	"errors"
 	"io"
+	"io/ioutil"
 
 	"golang.org/x/crypto/pbkdf2"
 )
 
-// Counter (CTR) mode.
+// Decryption Errors
+var (
+	ErrDecryption = errors.New("zip: decryption error")
+)
 
+// Counter (CTR) mode.
 // CTR converts a block cipher into a stream cipher by
 // repeatedly encrypting an incrementing counter and
 // xoring the resulting stream of data with the input.
@@ -111,6 +118,61 @@ func xorBytes(dst, a, b []byte) int {
 	return n
 }
 
+type authReader struct {
+	data  io.Reader     // data to be authenticated
+	adata io.Reader     // the authentication code to read
+	akey  []byte        // authentication key
+	buf   *bytes.Buffer // buffer to store data to authenticate
+	err   error
+	auth  bool
+}
+
+func newAuthReader(akey []byte, data, adata io.Reader) io.Reader {
+	return &authReader{
+		data:  data,
+		adata: adata,
+		akey:  akey,
+		buf:   new(bytes.Buffer),
+		err:   nil,
+		auth:  false,
+	}
+}
+
+// Read will fully buffer the file data payload to authenticate first.
+// If authentication fails, returns ErrDecryption immediately.
+// Else, sends data along for decryption.
+func (a *authReader) Read(b []byte) (int, error) {
+	// check for sticky error
+	if a.err != nil {
+		return 0, a.err
+	}
+	// make sure we have auth'ed before we send any data
+	if !a.auth {
+		nn, err := io.Copy(a.buf, a.data)
+		if err != nil {
+			a.err = ErrDecryption
+			return 0, a.err
+		}
+		ab := new(bytes.Buffer)
+		nn, err = io.Copy(ab, a.adata)
+		if err != nil || nn != 10 {
+			a.err = ErrDecryption
+			return 0, a.err
+		}
+		a.auth = checkAuthentication(a.buf.Bytes(), ab.Bytes(), a.akey)
+		if !a.auth {
+			a.err = ErrDecryption
+			return 0, a.err
+		}
+	}
+	// so we've authenticated the data, now just pass it on.
+	n, err := a.buf.Read(b)
+	if err != nil {
+		a.err = err
+	}
+	return n, a.err
+}
+
 func checkAuthentication(message, authcode, key []byte) bool {
 	mac := hmac.New(sha1.New, key)
 	mac.Write(message)
@@ -118,7 +180,13 @@ func checkAuthentication(message, authcode, key []byte) bool {
 	// Truncate at the first 10 bytes
 	expectedAuthCode = expectedAuthCode[:10]
 	// Change to use crypto/subtle for constant time comparison
-	return bytes.Equal(expectedAuthCode, authcode)
+	b := subtle.ConstantTimeCompare(expectedAuthCode, authcode) > 0
+	return b
+}
+
+func checkPasswordVerification(pwvv, pwv []byte) bool {
+	b := subtle.ConstantTimeCompare(pwvv, pwv) > 0
+	return b
 }
 
 func generateKeys(password, salt []byte, keySize int) (encKey, authKey, pwv []byte) {
@@ -130,7 +198,7 @@ func generateKeys(password, salt []byte, keySize int) (encKey, authKey, pwv []by
 	return
 }
 
-func newDecryptionReader(r io.Reader, f *File) (io.Reader, error) {
+func newDecryptionReader(r *io.SectionReader, f *File) (io.ReadCloser, error) {
 	keyLen := aesKeyLen(f.aesStrength)
 	saltLen := keyLen / 2 // salt is half of key len
 	if saltLen == 0 {
@@ -141,38 +209,39 @@ func newDecryptionReader(r io.Reader, f *File) (io.Reader, error) {
 	// See:
 	// https://www.imperialviolet.org/2014/06/27/streamingencryption.html
 	// https://www.imperialviolet.org/2015/05/16/aeads.html
-	content := make([]byte, f.CompressedSize64)
-	if _, err := io.ReadFull(r, content); err != nil {
+	// grab the salt, pwvv, data, and authcode
+	saltpwvv := make([]byte, saltLen+2)
+	if _, err := r.Read(saltpwvv); err != nil {
 		return nil, ErrDecryption
 	}
-	// grab the salt, pwvv, data, and authcode
-	salt := content[:saltLen]
-	pwvv := content[saltLen : saltLen+2]
-	content = content[saltLen+2:]
-	size := f.CompressedSize64 - uint64(saltLen) - 2 - 10
-	data := content[:size]
-	authcode := content[size:]
+	salt := saltpwvv[:saltLen]
+	pwvv := saltpwvv[saltLen : saltLen+2]
+	dataOff := int64(saltLen + 2)
+	dataLen := int64(f.CompressedSize64 - uint64(saltLen) - 2 - 10)
+	data := io.NewSectionReader(r, dataOff, dataLen)
+	authOff := dataOff + dataLen
+	authcode := io.NewSectionReader(r, authOff, 10)
 	// generate keys
 	decKey, authKey, pwv := generateKeys(f.password, salt, keyLen)
 	// check password verifier (pwv)
 	// Change to use crypto/subtle for constant time comparison
-	if !bytes.Equal(pwv, pwvv) {
+	if !checkPasswordVerification(pwv, pwvv) {
 		return nil, ErrDecryption
 	}
-	// check authentication
-	if !checkAuthentication(data, authcode, authKey) {
-		return nil, ErrDecryption
-	}
-	return decryptStream(data, decKey), nil
+	// setup auth reader
+	ar := newAuthReader(authKey, data, authcode)
+	// return decryption reader
+	dr := decryptStream(decKey, ar)
+	return ioutil.NopCloser(dr), nil
 }
 
-func decryptStream(ciphertext, key []byte) io.Reader {
+func decryptStream(key []byte, ciphertext io.Reader) io.Reader {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil
 	}
 	stream := newWinZipCTR(block)
-	reader := cipher.StreamReader{S: stream, R: bytes.NewReader(ciphertext)}
+	reader := &cipher.StreamReader{S: stream, R: ciphertext}
 	return reader
 }
 

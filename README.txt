@@ -6,14 +6,12 @@ This package DOES NOT intend to implement the encryption methods
 mentioned in the original PKWARE spec (sections 6.0 and 7.0):
 https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 
-
 The process
-==============================================================================
+============
 hello.txt -> compressed -> encrypted -> .zip -> decrypted -> decompressed -> hello.txt
 
-
 Roadmap
-==============================================================================
+========
 Reading - Done.
     TODO:
     1. Change to streaming authentication and decryption. (Maybe not such a good
@@ -22,9 +20,8 @@ Reading - Done.
 Writing - Not started.
 Testing - Needs more.
 
-
 WinZip AES specifies
-==============================================================================
+=====================
 1. Encryption-Decryption w/ AES-CTR (128, 192, or 256 bits)
 2. Key generation with PBKDF2-HMAC-SHA1 (1000 iteration count) that
 generates a master key broken into the following:
@@ -71,8 +68,8 @@ used that was replaced by the encryption process mentioned in #8.
 15. AE-1 keeps the CRC and should be verified after decompression.
 AE-2 removes the CRC and shouldn't be verified after decompression.
 Refer to http://www.winzip.com/aes_info.htm#winzip11 for the reasoning.
-16. Storage Format (file data payload) totals CompressedSize64 bytes:
+16. Storage Format (file data payload totals CompressedSize64 bytes):
     a. Salt - 8, 12, or 16 bytes depending on keysize
     b. Password Verification Value - 2 bytes
-    c. Encrypted Data - compressed size - salt - pwv - auth lengths
+    c. Encrypted Data - compressed size - salt - pwv - auth code lengths
     d. Authentication code - 10 bytes
