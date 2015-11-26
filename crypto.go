@@ -18,9 +18,18 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
-// Decryption Errors
+const (
+	// AES key lengths
+	aes128 = 16
+	aes192 = 24
+	aes256 = 32
+)
+
+// Encryption/Decryption Errors
 var (
-	ErrDecryption = errors.New("zip: decryption error")
+	ErrDecryption     = errors.New("zip: decryption error")
+	ErrPassword       = errors.New("zip: invalid password")
+	ErrAuthentication = errors.New("zip: authentication failed")
 )
 
 // Counter (CTR) mode.
@@ -145,18 +154,18 @@ func (a *authReader) Read(p []byte) (int, error) {
 	// write any data to mac
 	nn, err := a.mac.Write(p[:n])
 	if nn != n || err != nil {
-		a.err = ErrDecryption
+		a.err = io.ErrUnexpectedEOF
 		return n, a.err
 	}
 	if end {
 		ab := new(bytes.Buffer)
 		_, err = io.Copy(ab, a.adata)
 		if err != nil || ab.Len() != 10 {
-			a.err = ErrDecryption
+			a.err = io.ErrUnexpectedEOF
 			return n, a.err
 		}
 		if !a.checkAuthentication(ab.Bytes()) {
-			a.err = ErrDecryption
+			a.err = ErrAuthentication
 			return n, a.err
 		}
 	}
@@ -200,22 +209,22 @@ func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 	if !a.auth {
 		_, err := io.Copy(a.buf, a.data)
 		if err != nil {
-			a.err = ErrDecryption
+			a.err = io.ErrUnexpectedEOF
 			return 0, a.err
 		}
 		ab := new(bytes.Buffer)
 		nn, err := io.Copy(ab, a.adata)
 		if err != nil || nn != 10 {
-			a.err = ErrDecryption
+			a.err = io.ErrUnexpectedEOF
 			return 0, a.err
 		}
 		mn, err := a.mac.Write(a.buf.Bytes())
 		if mn != a.buf.Len() || err != nil {
-			a.err = ErrDecryption
+			a.err = io.ErrUnexpectedEOF
 			return 0, a.err
 		}
 		if !a.checkAuthentication(ab.Bytes()) {
-			a.err = ErrDecryption
+			a.err = ErrAuthentication
 			return 0, a.err
 		}
 	}
@@ -264,7 +273,7 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	// grab the salt, pwvv, data, and authcode
 	saltpwvv := make([]byte, saltLen+2)
 	if _, err := r.Read(saltpwvv); err != nil {
-		return nil, ErrDecryption
+		return nil, err
 	}
 	salt := saltpwvv[:saltLen]
 	pwvv := saltpwvv[saltLen : saltLen+2]
@@ -273,7 +282,7 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	// check password verifier (pwv)
 	// Change to use crypto/subtle for constant time comparison
 	if !checkPasswordVerification(pwv, pwvv) {
-		return nil, ErrDecryption
+		return nil, ErrPassword
 	}
 	dataOff := int64(saltLen + 2)
 	dataLen := int64(f.CompressedSize64 - uint64(saltLen) - 2 - 10)
@@ -284,6 +293,9 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	ar := newAuthReader(authKey, data, authcode, false)
 	// return decryption reader
 	dr := decryptStream(decKey, ar)
+	if dr == nil {
+		return nil, ErrDecryption
+	}
 	return dr, nil
 }
 

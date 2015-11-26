@@ -67,11 +67,6 @@ const (
 	// extra header id's
 	zip64ExtraId     = 0x0001 // zip64 Extended Information Extra Field
 	winzipAesExtraId = 0x9901 // winzip AES Extra Field
-
-	// AES key lengths
-	aes128 = 16
-	aes192 = 24
-	aes256 = 32
 )
 
 // FileHeader describes a file within a zip file.
