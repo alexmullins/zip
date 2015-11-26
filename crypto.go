@@ -250,6 +250,7 @@ func generateKeys(password, salt []byte, keySize int) (encKey, authKey, pwv []by
 	return
 }
 
+// newDecryptionReader returns an authenticated, decryption reader
 func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	keyLen := aesKeyLen(f.aesStrength)
 	saltLen := keyLen / 2 // salt is half of key len
