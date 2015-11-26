@@ -97,6 +97,25 @@ type FileHeader struct {
 	Extra              []byte
 	ExternalAttrs      uint32 // Meaning depends on CreatorVersion
 	Comment            string
+
+	// encryption fields
+	password    []byte
+	ae          uint16
+	aesStrength byte
+}
+
+// SetPassword must be called before calling Open on the file.
+func (f *FileHeader) SetPassword(password []byte) {
+	f.password = password
+}
+
+// IsEncrypted indicates whether this file's data is encrypted.
+func (f *FileHeader) IsEncrypted() bool {
+	return f.Flags&0x1 == 1
+}
+
+func (f *FileHeader) isAE2() bool {
+	return f.ae == 2
 }
 
 // FileInfo returns an os.FileInfo for the FileHeader.

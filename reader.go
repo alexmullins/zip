@@ -37,9 +37,6 @@ type File struct {
 	zipr         io.ReaderAt
 	zipsize      int64
 	headerOffset int64
-	password     []byte
-	ae           uint16
-	aesStrength  byte
 }
 
 // SetPassword must be called before calling Open on the file.
