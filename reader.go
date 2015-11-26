@@ -39,20 +39,6 @@ type File struct {
 	headerOffset int64
 }
 
-// SetPassword must be called before calling Open on the file.
-func (f *File) SetPassword(password []byte) {
-	f.password = password
-}
-
-// IsEncrypted indicates whether this file's data is encrypted.
-func (f *File) IsEncrypted() bool {
-	return f.Flags&0x1 == 1
-}
-
-func (f *File) isAE2() bool {
-	return f.ae == 2
-}
-
 func (f *File) hasDataDescriptor() bool {
 	return f.Flags&0x8 != 0
 }
@@ -171,19 +157,14 @@ func (f *File) Open() (rc io.ReadCloser, err error) {
 		return
 	}
 	rc = dcomp(r)
-	// TODO: if AE-2, skip CRC and possible dataDescriptor
+	// If AE-2, skip CRC and possible dataDescriptor
+	if f.isAE2() {
+		return
+	}
 	var desr io.Reader
 	if f.hasDataDescriptor() {
 		desr = io.NewSectionReader(f.zipr, f.headerOffset+bodyOffset+size, dataDescriptorLen)
 	}
-	// if !f.isAE2() {
-	// 	rc = &checksumReader{
-	// 		rc:   rc,
-	// 		hash: crc32.NewIEEE(),
-	// 		f:    f,
-	// 		desr: desr,
-	// 	}
-	// }
 	rc = &checksumReader{
 		rc:   rc,
 		hash: crc32.NewIEEE(),
