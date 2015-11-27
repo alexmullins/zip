@@ -8,16 +8,13 @@ https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 
 The process
 ============
-hello.txt -> compressed -> encrypted -> .zip -> decrypted -> decompressed -> hello.txt
+1. hello.txt -> compressed -> encrypted -> .zip
+2. .zip -> decrypted -> decompressed -> hello.txt
 
 Roadmap
 ========
 Reading - Done.
-    TODO:
-    1. Change to streaming authentication and decryption. (Maybe not such a good
-    idea: https://www.imperialviolet.org/2014/06/27/streamingencryption.html)
-    2. Check for AE-2 and skip CRC check to match with WinZip spec.
-Writing - Not started.
+Writing - Starting.
 Testing - Needs more.
 
 WinZip AES specifies
