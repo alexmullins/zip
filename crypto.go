@@ -286,6 +286,10 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	}
 	dataOff := int64(saltLen + 2)
 	dataLen := int64(f.CompressedSize64 - uint64(saltLen) - 2 - 10)
+	// // TODO(alex): Should the compressed sizes be fixed?
+	// // Not the ideal place to do this.
+	// f.CompressedSize64 = uint64(dataLen)
+	// f.CompressedSize = uint32(dataLen)
 	data := io.NewSectionReader(r, dataOff, dataLen)
 	authOff := dataOff + dataLen
 	authcode := io.NewSectionReader(r, authOff, 10)

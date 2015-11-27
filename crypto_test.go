@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// Test simple password reading.
 func TestPasswordSimple(t *testing.T) {
 	file := "hello-aes.zip"
 	var buf bytes.Buffer
@@ -39,6 +40,7 @@ func TestPasswordSimple(t *testing.T) {
 	}
 }
 
+// Test for multi-file password protected zip.
 func TestPasswordHelloWorldAes(t *testing.T) {
 	file := "world-aes.zip"
 	expecting := "helloworld"
@@ -70,6 +72,8 @@ func TestPasswordHelloWorldAes(t *testing.T) {
 	}
 }
 
+// Test for password protected file that is larger than a single
+// AES block size to check CTR implementation.
 func TestPasswordMacbethAct1(t *testing.T) {
 	file := "macbeth-act1.zip"
 	expecting := "Exeunt"
@@ -98,6 +102,70 @@ func TestPasswordMacbethAct1(t *testing.T) {
 	}
 }
 
-// Test for AE-1 vs AE-2
-// Test for tampered data payload, use messWith
-// Test streaming vs buffered reading
+// Change to AE-1 and change CRC value to fail check.
+// Must be != 0 due to zip package already skipping if == 0.
+func returnAE1BadCRC() (io.ReaderAt, int64) {
+	return messWith("hello-aes.zip", func(b []byte) {
+		// Change version to AE-1(1)
+		b[0x2B] = 1 // file
+		b[0xBA] = 1 // TOC
+		// Change CRC to bad value
+		b[0x11]++ // file
+		b[0x6B]++ // TOC
+	})
+}
+
+// Test for AE-1 Corrupt CRC
+func TestPasswordAE1BadCRC(t *testing.T) {
+	buf := new(bytes.Buffer)
+	file, s := returnAE1BadCRC()
+	r, err := NewReader(file, s)
+	if err != nil {
+		t.Errorf("Expected hello-aes.zip to open: %v", err)
+	}
+	for _, f := range r.File {
+		if !f.IsEncrypted() {
+			t.Errorf("Expected zip to be encrypted")
+		}
+		f.SetPassword([]byte("golang"))
+		rc, err := f.Open()
+		if err != nil {
+			t.Errorf("Expected the readcloser to open.")
+		}
+		defer rc.Close()
+		if _, err := io.Copy(buf, rc); err != ErrChecksum {
+			t.Errorf("Expected the checksum to fail")
+		}
+	}
+}
+
+// Corrupt the last byte of ciphertext to fail authentication
+func returnTamperedData() (io.ReaderAt, int64) {
+	return messWith("hello-aes.zip", func(b []byte) {
+		b[0x50]++
+	})
+}
+
+// Test for tampered file data payload.
+func TestPasswordTamperedData(t *testing.T) {
+	buf := new(bytes.Buffer)
+	file, s := returnTamperedData()
+	r, err := NewReader(file, s)
+	if err != nil {
+		t.Errorf("Expected hello-aes.zip to open: %v", err)
+	}
+	for _, f := range r.File {
+		if !f.IsEncrypted() {
+			t.Errorf("Expected zip to be encrypted")
+		}
+		f.SetPassword([]byte("golang"))
+		rc, err := f.Open()
+		if err != nil {
+			t.Errorf("Expected the readcloser to open.")
+		}
+		defer rc.Close()
+		if _, err := io.Copy(buf, rc); err != ErrAuthentication {
+			t.Errorf("Expected the checksum to fail")
+		}
+	}
+}
