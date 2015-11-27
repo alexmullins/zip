@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-var pwFn = func() []byte {
+func pwFn() []byte {
 	return []byte("golang")
 }
 
