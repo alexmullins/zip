@@ -7,6 +7,10 @@ import (
 	"testing"
 )
 
+var pwFn = func() []byte {
+	return []byte("golang")
+}
+
 // Test simple password reading.
 func TestPasswordSimple(t *testing.T) {
 	file := "hello-aes.zip"
@@ -26,7 +30,7 @@ func TestPasswordSimple(t *testing.T) {
 	if f.Method != 0 {
 		t.Errorf("Expected %s to have its Method set to 0.", file)
 	}
-	f.SetPassword([]byte("golang"))
+	f.Password = pwFn
 	rc, err := f.Open()
 	if err != nil {
 		t.Errorf("Expected to open the readcloser: %v.", err)
@@ -57,7 +61,7 @@ func TestPasswordHelloWorldAes(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected %s to be encrypted.", f.FileInfo().Name)
 		}
-		f.SetPassword([]byte("golang"))
+		f.Password = pwFn
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected to open readcloser: %v", err)
@@ -87,7 +91,7 @@ func TestPasswordMacbethAct1(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected %s to be encrypted.", f.Name)
 		}
-		f.SetPassword([]byte("golang"))
+		f.Password = pwFn
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected to open readcloser: %v", err)
@@ -127,7 +131,7 @@ func TestPasswordAE1BadCRC(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected zip to be encrypted")
 		}
-		f.SetPassword([]byte("golang"))
+		f.Password = pwFn
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected the readcloser to open.")
@@ -158,7 +162,7 @@ func TestPasswordTamperedData(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected zip to be encrypted")
 		}
-		f.SetPassword([]byte("golang"))
+		f.Password = pwFn
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected the readcloser to open.")

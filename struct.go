@@ -94,15 +94,14 @@ type FileHeader struct {
 	Comment            string
 
 	// encryption fields
-	password    []byte
+	Password    PasswordFn // The password to use when reading/writing
 	ae          uint16
 	aesStrength byte
 }
 
-// SetPassword must be called before calling Open on the file.
-func (f *FileHeader) SetPassword(password []byte) {
-	f.password = password
-}
+// PasswordFn is a function that returns the password
+// as a byte slice
+type PasswordFn func() []byte
 
 // IsEncrypted indicates whether this file's data is encrypted.
 func (f *FileHeader) IsEncrypted() bool {
