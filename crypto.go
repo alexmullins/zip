@@ -278,6 +278,9 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	salt := saltpwvv[:saltLen]
 	pwvv := saltpwvv[saltLen : saltLen+2]
 	// generate keys
+	if f.Password == nil {
+		return nil, ErrPassword
+	}
 	decKey, authKey, pwv := generateKeys(f.Password(), salt, keyLen)
 	// check password verifier (pwv)
 	// Change to use crypto/subtle for constant time comparison
