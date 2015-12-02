@@ -9,6 +9,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha1"
 	"crypto/subtle"
 	"errors"
@@ -212,7 +213,7 @@ func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 			a.err = io.ErrUnexpectedEOF
 			return 0, a.err
 		}
-		ab := new(bytes.Buffer)
+		ab := new(bytes.Buffer) // remove this buffer and io.Copy to mac
 		nn, err := io.Copy(ab, a.adata)
 		if err != nil || nn != 10 {
 			a.err = io.ErrUnexpectedEOF
@@ -266,10 +267,6 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	if saltLen == 0 {
 		return nil, ErrDecryption
 	}
-	// Change to a streaming implementation
-	// Maybe not such a good idea after all. See:
-	// https://www.imperialviolet.org/2014/06/27/streamingencryption.html
-	// https://www.imperialviolet.org/2015/05/16/aeads.html
 	// grab the salt, pwvv, data, and authcode
 	saltpwvv := make([]byte, saltLen+2)
 	if _, err := r.Read(saltpwvv); err != nil {
@@ -327,4 +324,102 @@ func aesKeyLen(strength byte) int {
 	default:
 		return 0
 	}
+}
+
+type authWriter struct {
+	hmac hash.Hash // from fw.hmac
+	w    io.Writer // this will be the compCount writer
+}
+
+func (aw *authWriter) Write(p []byte) (int, error) {
+	_, err := aw.hmac.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	return aw.w.Write(p)
+}
+
+// writes out the salt, pwv, and then the encrypted file data
+type encryptionWriter struct {
+	pwv   []byte    // password verification code to be written
+	salt  []byte    // salt to be written
+	w     io.Writer // where to write the salt + pwv
+	es    io.Writer // where to write encrypted file data
+	first bool      // first write?
+	err   error     // last error
+}
+
+func (ew *encryptionWriter) Write(p []byte) (int, error) {
+	if ew.err != nil {
+		return 0, ew.err
+	}
+	if ew.first {
+		// if our first time writing
+		// must write out the salt and pwv first unencrypted
+		_, err1 := ew.w.Write(ew.salt)
+		_, err2 := ew.w.Write(ew.pwv)
+		if err1 != nil || err2 != nil {
+			ew.err = errors.New("zip: error writing salt or pwv")
+			return 0, ew.err
+		}
+		ew.first = false
+	}
+	// now just pass on to the encryption stream
+	return ew.es.Write(p)
+}
+
+// newEncryptionWriter returns a io.Writer that when written to, 1. writes
+// out the salt, 2. writes out pwv, 3. writes out encrypted the data, and finally
+// 4. will write to hmac.
+func newEncryptionWriter(w io.Writer, fh *FileHeader, fw *fileWriter) (io.Writer, error) {
+	var salt [16]byte
+	_, err := rand.Read(salt[:])
+	if err != nil {
+		return nil, errors.New("zip: unable to generate random salt")
+	}
+	ekey, akey, pwv := generateKeys(fh.Password(), salt[:], aes256)
+	fw.hmac = hmac.New(sha1.New, akey)
+	aw := &authWriter{
+		hmac: fw.hmac,
+		w:    w,
+	}
+	es, err := encryptStream(ekey, aw)
+	if err != nil {
+		return nil, err
+	}
+	ew := &encryptionWriter{
+		pwv:   pwv,
+		salt:  salt[:],
+		w:     w,
+		es:    es,
+		first: true,
+	}
+	return ew, nil
+}
+
+func encryptStream(key []byte, w io.Writer) (io.Writer, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, errors.New("zip: couldn't create AES cipher")
+	}
+	stream := newWinZipCTR(block)
+	writer := &cipher.StreamWriter{S: stream, W: w}
+	return writer, nil
+}
+
+func (fh *FileHeader) writeWinZipExtra() {
+	// total size is 11 bytes
+	var buf [11]byte
+	eb := writeBuf(buf[:])
+	eb.uint16(winzipAesExtraId)
+	eb.uint16(7)         // following data size is 7
+	eb.uint16(2)         // ae 2
+	eb.uint16(0x4541)    // "AE"
+	eb.uint8(3)          // aes256
+	eb.uint16(fh.Method) // original compression method
+	fh.Extra = append(fh.Extra, buf[:]...)
+}
+
+func (fh *FileHeader) setEncryptionBit() {
+	fh.Flags |= 0x1
 }

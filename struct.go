@@ -93,8 +93,14 @@ type FileHeader struct {
 	ExternalAttrs      uint32 // Meaning depends on CreatorVersion
 	Comment            string
 
-	// encryption fields
-	Password    PasswordFn // The password to use when reading/writing
+	// DeferAuth determines whether hmac checks happen before
+	// any ciphertext is decrypted. It is recommended to leave this
+	// set to false. For more detail:
+	// https://www.imperialviolet.org/2014/06/27/streamingencryption.html
+	// https://www.imperialviolet.org/2015/05/16/aeads.html
+	DeferAuth bool
+
+	Password    PasswordFn // Returns the password to use when reading/writing
 	ae          uint16
 	aesStrength byte
 }

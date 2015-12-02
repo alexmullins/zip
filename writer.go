@@ -211,7 +211,8 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	}
 
 	fh.Flags |= 0x8 // we will write a data descriptor
-
+	// TODO(alex): Look at spec and see if these need to be changed
+	// when using encryption.
 	fh.CreatorVersion = fh.CreatorVersion&0xff00 | zipVersion20 // preserve compatibility byte
 	fh.ReaderVersion = zipVersion20
 
@@ -220,12 +221,27 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 		compCount: &countWriter{w: w.cw},
 		crc32:     crc32.NewIEEE(),
 	}
+	// Get the compressor before possibly changing Method to 99 due to password
 	comp := compressor(fh.Method)
 	if comp == nil {
 		return nil, ErrAlgorithm
 	}
+	// check for password
+	var sw io.Writer = fw.compCount
+	if fh.Password != nil {
+		// we have a password and need to encrypt.
+		// 1. Set encryption bit in fh.Flags
+		fh.setEncryptionBit()
+		fh.writeWinZipExtra()
+		fh.Method = 99 // ok to change, we've gotten the comp and wrote extra
+		ew, err := newEncryptionWriter(sw, fh, fw)
+		if err != nil {
+			return nil, errors.New("zip: unable to create an encryption writer")
+		}
+		sw = ew
+	}
 	var err error
-	fw.comp, err = comp(fw.compCount)
+	fw.comp, err = comp(sw)
 	if err != nil {
 		return nil, err
 	}
@@ -278,6 +294,8 @@ type fileWriter struct {
 	compCount *countWriter
 	crc32     hash.Hash32
 	closed    bool
+
+	hmac hash.Hash // possible hmac used for authentication when encrypting
 }
 
 func (w *fileWriter) Write(p []byte) (int, error) {
@@ -296,10 +314,21 @@ func (w *fileWriter) close() error {
 	if err := w.comp.Close(); err != nil {
 		return err
 	}
-
+	// if encrypted grab the hmac and write it out
+	if w.header.IsEncrypted() {
+		authCode := w.hmac.Sum(nil)
+		authCode = authCode[:10]
+		_, err := w.compCount.Write(authCode)
+		if err != nil {
+			return errors.New("zip: error writing authcode")
+		}
+	}
 	// update FileHeader
 	fh := w.header.FileHeader
-	fh.CRC32 = w.crc32.Sum32()
+	// ae-2 we don't write out CRC
+	if !fh.IsEncrypted() {
+		fh.CRC32 = w.crc32.Sum32()
+	}
 	fh.CompressedSize64 = uint64(w.compCount.count)
 	fh.UncompressedSize64 = uint64(w.rawCount.count)
 
@@ -357,6 +386,11 @@ func (w nopCloser) Close() error {
 }
 
 type writeBuf []byte
+
+func (b *writeBuf) uint8(v uint8) {
+	(*b)[0] = v
+	*b = (*b)[1:]
+}
 
 func (b *writeBuf) uint16(v uint16) {
 	binary.LittleEndian.PutUint16(*b, v)

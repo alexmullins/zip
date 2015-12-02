@@ -12,7 +12,7 @@ func pwFn() []byte {
 }
 
 // Test simple password reading.
-func TestPasswordSimple(t *testing.T) {
+func TestPasswordReadSimple(t *testing.T) {
 	file := "hello-aes.zip"
 	var buf bytes.Buffer
 	r, err := OpenReader(filepath.Join("testdata", file))
@@ -171,5 +171,54 @@ func TestPasswordTamperedData(t *testing.T) {
 		if _, err := io.Copy(buf, rc); err != ErrAuthentication {
 			t.Errorf("Expected the checksum to fail")
 		}
+	}
+}
+
+func TestPasswordWriteSimple(t *testing.T) {
+	contents := []byte("Hello World")
+	conLen := len(contents)
+
+	// Write a zip
+	fh := &FileHeader{
+		Name:     "hello.txt",
+		Password: pwFn,
+	}
+	raw := new(bytes.Buffer)
+	zipw := NewWriter(raw)
+	w, err := zipw.CreateHeader(fh)
+	if err != nil {
+		t.Errorf("Expected to create a new FileHeader")
+	}
+	n, err := io.Copy(w, bytes.NewReader(contents))
+	if err != nil || n != int64(conLen) {
+		t.Errorf("Expected to write the full contents to the writer.")
+	}
+	zipw.Close()
+
+	// Read the zip
+	buf := new(bytes.Buffer)
+	zipr, err := NewReader(bytes.NewReader(raw.Bytes()), int64(raw.Len()))
+	if err != nil {
+		t.Errorf("Expected to open a new zip reader: %v", err)
+	}
+	nn := len(zipr.File)
+	if nn != 1 {
+		t.Errorf("Expected to have one file in the zip archive, but has %d files", nn)
+	}
+	z := zipr.File[0]
+	z.Password = pwFn
+	rr, err := z.Open()
+	if err != nil {
+		t.Errorf("Expected to open the readcloser: %v", err)
+	}
+	n, err = io.Copy(buf, rr)
+	if err != nil {
+		t.Errorf("Expected to write to temporary buffer: %v", err)
+	}
+	if n != int64(conLen) {
+		t.Errorf("Expected to copy %d bytes to temp buffer, but copied %d bytes instead", conLen, n)
+	}
+	if !bytes.Equal(contents, buf.Bytes()) {
+		t.Errorf("Expected the unzipped contents to equal '%s', but was '%s' instead", contents, buf.Bytes())
 	}
 }
