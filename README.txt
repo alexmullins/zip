@@ -8,6 +8,9 @@ https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 
 Status - Alpha. More tests and code clean up next.
 
+Documentation -
+https://godoc.org/github.com/alexmullins/zip#example_Writer_Encrypt
+
 Roadmap
 ========
 Reading - Done.
