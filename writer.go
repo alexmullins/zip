@@ -228,10 +228,8 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	}
 	// check for password
 	var sw io.Writer = fw.compCount
-	if fh.Password != nil {
+	if fh.password != nil {
 		// we have a password and need to encrypt.
-		// 1. Set encryption bit in fh.Flags
-		fh.setEncryptionBit()
 		fh.writeWinZipExtra()
 		fh.Method = 99 // ok to change, we've gotten the comp and wrote extra
 		ew, err := newEncryptionWriter(sw, fh, fw)

@@ -6,16 +6,18 @@ This package DOES NOT intend to implement the encryption methods
 mentioned in the original PKWARE spec (sections 6.0 and 7.0):
 https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT
 
-The process
-============
-1. hello.txt -> compressed -> encrypted -> .zip
-2. .zip -> decrypted -> decompressed -> hello.txt
+Status - Alpha. More tests and code clean up next.
 
 Roadmap
 ========
 Reading - Done.
-Writing - Starting.
+Writing - Done.
 Testing - Needs more.
+
+The process
+============
+1. hello.txt -> compressed -> encrypted -> .zip
+2. .zip -> decrypted -> decompressed -> hello.txt
 
 WinZip AES specifies
 =====================

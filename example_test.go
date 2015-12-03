@@ -58,9 +58,6 @@ func ExampleReader() {
 	// Iterate through the files in the archive,
 	// printing some of their contents.
 	for _, f := range r.File {
-		// if f.IsEncrypted() {
-		// 	f.SetPassword([]byte("password"))
-		// }
 		fmt.Printf("Contents of %s:\n", f.Name)
 		rc, err := f.Open()
 		if err != nil {
@@ -76,4 +73,41 @@ func ExampleReader() {
 	// Output:
 	// Contents of README:
 	// This is the source code repository for the Go programming language.
+}
+
+func ExampleWriter_Encrypt() {
+	contents := []byte("Hello World")
+
+	// write a password zip
+	raw := new(bytes.Buffer)
+	zipw := zip.NewWriter(raw)
+	w, err := zipw.Encrypt("hello.txt", "golang")
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = io.Copy(w, bytes.NewReader(contents))
+	if err != nil {
+		log.Fatal(err)
+	}
+	zipw.Close()
+
+	// read the password zip
+	zipr, err := zip.NewReader(bytes.NewReader(raw.Bytes()), int64(raw.Len()))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, z := range zipr.File {
+		z.SetPassword("golang")
+		rr, err := z.Open()
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = io.Copy(os.Stdout, rr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		rr.Close()
+	}
+	// Output:
+	// Hello World
 }

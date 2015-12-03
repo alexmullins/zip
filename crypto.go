@@ -26,8 +26,22 @@ const (
 	aes256 = 32
 )
 
+func aesKeyLen(strength byte) int {
+	switch strength {
+	case 1:
+		return aes128
+	case 2:
+		return aes192
+	case 3:
+		return aes256
+	default:
+		return 0
+	}
+}
+
 // Encryption/Decryption Errors
 var (
+	ErrEncryption     = errors.New("zip: encryption error")
 	ErrDecryption     = errors.New("zip: decryption error")
 	ErrPassword       = errors.New("zip: invalid password")
 	ErrAuthentication = errors.New("zip: authentication failed")
@@ -38,12 +52,11 @@ var (
 // repeatedly encrypting an incrementing counter and
 // xoring the resulting stream of data with the input.
 
-// This is a reimplementation of Go's CTR mode to allow
-// for little-endian, left-aligned uint32 counter. Go's
-// cipher.NewCTR follows the NIST Standard SP 800-38A, pp 13-15
-// which has a big-endian, right-aligned counter. WinZip
-// AES requires the CTR mode to have a little-endian,
-// left-aligned counter.
+// This is a re-implementation of Go's CTR mode to allow
+// for a little-endian, left-aligned uint32 counter, which
+// is required for WinZip AES encryption. Go's cipher.NewCTR
+// follows the NIST Standard SP 800-38A, pp 13-15
+// which has a big-endian, right-aligned counter.
 
 type ctr struct {
 	b       cipher.Block
@@ -55,7 +68,7 @@ type ctr struct {
 const streamBufferSize = 512
 
 // NewWinZipCTR returns a Stream which encrypts/decrypts using the given Block in
-// counter mode. The counter is initially set to 1.
+// counter mode. The counter is initially set to 1 per WinZip AES.
 func newWinZipCTR(block cipher.Block) cipher.Stream {
 	bufSize := streamBufferSize
 	if bufSize < block.BlockSize() {
@@ -128,6 +141,29 @@ func xorBytes(dst, a, b []byte) int {
 	return n
 }
 
+// newAuthReader returns either a buffered or streaming authentication reader.
+// Buffered authentication is recommended. Streaming authentication is only
+// recommended if: 1. you buffer the data yourself and wait for authentication
+// before streaming to another source such as the network, or 2. you just don't
+// care about authenticating unknown ciphertext before use :).
+func newAuthReader(akey []byte, data, adata io.Reader, streaming bool) io.Reader {
+	ar := authReader{
+		data:  data,
+		adata: adata,
+		mac:   hmac.New(sha1.New, akey),
+		err:   nil,
+		auth:  false,
+	}
+	if streaming {
+		return &ar
+	}
+	return &bufferedAuthReader{
+		ar,
+		new(bytes.Buffer),
+	}
+}
+
+// Streaming authentication
 type authReader struct {
 	data  io.Reader // data to be authenticated
 	adata io.Reader // the authentication code to read
@@ -136,7 +172,6 @@ type authReader struct {
 	auth  bool
 }
 
-// Streaming authentication
 func (a *authReader) Read(p []byte) (int, error) {
 	if a.err != nil {
 		return 0, a.err
@@ -173,34 +208,12 @@ func (a *authReader) Read(p []byte) (int, error) {
 	return n, a.err
 }
 
-// newAuthReader returns either a buffered or streaming authentication reader.
-// Buffered authentication is recommended. Streaming authentication is only
-// recommended if: 1. you buffer the data yourself and wait for authentication
-// before streaming to another source such as the network, or 2. you just don't
-// care about authenticating unknown ciphertext before use :).
-func newAuthReader(akey []byte, data, adata io.Reader, streaming bool) io.Reader {
-	ar := authReader{
-		data:  data,
-		adata: adata,
-		mac:   hmac.New(sha1.New, akey),
-		err:   nil,
-		auth:  false,
-	}
-	if streaming {
-		return &ar
-	}
-	return &bufferedAuthReader{
-		ar,
-		new(bytes.Buffer),
-	}
-}
-
+// buffered authentication
 type bufferedAuthReader struct {
 	authReader
 	buf *bytes.Buffer // buffer to store data to authenticate
 }
 
-// buffered authentication
 func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 	// check for sticky error
 	if a.err != nil {
@@ -275,10 +288,10 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	salt := saltpwvv[:saltLen]
 	pwvv := saltpwvv[saltLen : saltLen+2]
 	// generate keys
-	if f.Password == nil {
+	if f.password == nil {
 		return nil, ErrPassword
 	}
-	decKey, authKey, pwv := generateKeys(f.Password(), salt, keyLen)
+	decKey, authKey, pwv := generateKeys(f.password(), salt, keyLen)
 	// check password verifier (pwv)
 	// Change to use crypto/subtle for constant time comparison
 	if !checkPasswordVerification(pwv, pwvv) {
@@ -294,7 +307,7 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	authOff := dataOff + dataLen
 	authcode := io.NewSectionReader(r, authOff, 10)
 	// setup auth reader, (buffered)/streaming
-	ar := newAuthReader(authKey, data, authcode, false)
+	ar := newAuthReader(authKey, data, authcode, f.DeferAuth)
 	// return decryption reader
 	dr := decryptStream(decKey, ar)
 	if dr == nil {
@@ -313,19 +326,7 @@ func decryptStream(key []byte, ciphertext io.Reader) io.Reader {
 	return reader
 }
 
-func aesKeyLen(strength byte) int {
-	switch strength {
-	case 1:
-		return aes128
-	case 2:
-		return aes192
-	case 3:
-		return aes256
-	default:
-		return 0
-	}
-}
-
+// writes encrypted data to hmac as it passes through
 type authWriter struct {
 	hmac hash.Hash // from fw.hmac
 	w    io.Writer // this will be the compCount writer
@@ -344,8 +345,8 @@ type encryptionWriter struct {
 	pwv   []byte    // password verification code to be written
 	salt  []byte    // salt to be written
 	w     io.Writer // where to write the salt + pwv
-	es    io.Writer // where to write encrypted file data
-	first bool      // first write?
+	es    io.Writer // where to write plaintext
+	first bool      // first write
 	err   error     // last error
 }
 
@@ -368,16 +369,26 @@ func (ew *encryptionWriter) Write(p []byte) (int, error) {
 	return ew.es.Write(p)
 }
 
-// newEncryptionWriter returns a io.Writer that when written to, 1. writes
-// out the salt, 2. writes out pwv, 3. writes out encrypted the data, and finally
-// 4. will write to hmac.
+func encryptStream(key []byte, w io.Writer) (io.Writer, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, errors.New("zip: couldn't create AES cipher")
+	}
+	stream := newWinZipCTR(block)
+	writer := &cipher.StreamWriter{S: stream, W: w}
+	return writer, nil
+}
+
+// newEncryptionWriter returns an io.Writer that when written to, 1. writes
+// out the salt, 2. writes out pwv, and 3. writes out authenticated, encrypted
+// data. The authcode will be written out in fileWriter.close().
 func newEncryptionWriter(w io.Writer, fh *FileHeader, fw *fileWriter) (io.Writer, error) {
 	var salt [16]byte
 	_, err := rand.Read(salt[:])
 	if err != nil {
 		return nil, errors.New("zip: unable to generate random salt")
 	}
-	ekey, akey, pwv := generateKeys(fh.Password(), salt[:], aes256)
+	ekey, akey, pwv := generateKeys(fh.password(), salt[:], aes256)
 	fw.hmac = hmac.New(sha1.New, akey)
 	aw := &authWriter{
 		hmac: fw.hmac,
@@ -397,29 +408,56 @@ func newEncryptionWriter(w io.Writer, fh *FileHeader, fw *fileWriter) (io.Writer
 	return ew, nil
 }
 
-func encryptStream(key []byte, w io.Writer) (io.Writer, error) {
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, errors.New("zip: couldn't create AES cipher")
-	}
-	stream := newWinZipCTR(block)
-	writer := &cipher.StreamWriter{S: stream, W: w}
-	return writer, nil
+// IsEncrypted indicates whether this file's data is encrypted.
+func (h *FileHeader) IsEncrypted() bool {
+	return h.Flags&0x1 == 1
 }
 
-func (fh *FileHeader) writeWinZipExtra() {
+// WinZip AE-2 specifies that no CRC value is written and
+// should be skipped when reading.
+func (h *FileHeader) isAE2() bool {
+	return h.ae == 2
+}
+
+func (h *FileHeader) writeWinZipExtra() {
 	// total size is 11 bytes
 	var buf [11]byte
 	eb := writeBuf(buf[:])
-	eb.uint16(winzipAesExtraId)
-	eb.uint16(7)         // following data size is 7
-	eb.uint16(2)         // ae 2
-	eb.uint16(0x4541)    // "AE"
-	eb.uint8(3)          // aes256
-	eb.uint16(fh.Method) // original compression method
-	fh.Extra = append(fh.Extra, buf[:]...)
+	eb.uint16(winzipAesExtraId) // 0x9901
+	eb.uint16(7)                // following data size is 7
+	eb.uint16(2)                // ae 2
+	eb.uint16(0x4541)           // "AE"
+	eb.uint8(3)                 // aes256
+	eb.uint16(h.Method)         // original compression method
+	h.Extra = append(h.Extra, buf[:]...)
 }
 
-func (fh *FileHeader) setEncryptionBit() {
-	fh.Flags |= 0x1
+func (h *FileHeader) setEncryptionBit() {
+	h.Flags |= 0x1
+}
+
+// SetPassword sets the password used for encryption/decryption.
+func (h *FileHeader) SetPassword(password string) {
+	if !h.IsEncrypted() {
+		h.setEncryptionBit()
+	}
+	h.password = func() []byte {
+		return []byte(password)
+	}
+}
+
+// PasswordFn is a function that returns the password
+// as a byte slice
+type passwordFn func() []byte
+
+// Encrypt is similar to Create except that it will encrypt the file contents
+// using AES-256 with the given password. Must follow all the same constraints
+// as Create.
+func (w *Writer) Encrypt(name string, password string) (io.Writer, error) {
+	fh := &FileHeader{
+		Name:   name,
+		Method: Deflate,
+	}
+	fh.SetPassword(password)
+	return w.CreateHeader(fh)
 }

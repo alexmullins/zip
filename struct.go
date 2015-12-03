@@ -17,7 +17,7 @@ for normal archives both fields will be the same. For files requiring
 the ZIP64 format the 32 bit fields will be 0xffffffff and the 64 bit
 fields must be used instead.
 
-Can read/write AES encrypted files that use Winzip's AES encryption method.
+Can read/write password protected files that use Winzip's AES encryption method.
 See: http://www.winzip.com/aes_info.htm
 */
 package zip
@@ -93,29 +93,17 @@ type FileHeader struct {
 	ExternalAttrs      uint32 // Meaning depends on CreatorVersion
 	Comment            string
 
-	// DeferAuth determines whether hmac checks happen before
-	// any ciphertext is decrypted. It is recommended to leave this
-	// set to false. For more detail:
+	// DeferAuth being set to true will delay hmac auth/integrity
+	// checks when decrypting a file meaning the reader will be
+	// getting unauthenticated plaintext. It is recommended to leave
+	// this set to false. For more detail:
 	// https://www.imperialviolet.org/2014/06/27/streamingencryption.html
 	// https://www.imperialviolet.org/2015/05/16/aeads.html
 	DeferAuth bool
 
-	Password    PasswordFn // Returns the password to use when reading/writing
+	password    passwordFn // Returns the password to use when reading/writing
 	ae          uint16
 	aesStrength byte
-}
-
-// PasswordFn is a function that returns the password
-// as a byte slice
-type PasswordFn func() []byte
-
-// IsEncrypted indicates whether this file's data is encrypted.
-func (f *FileHeader) IsEncrypted() bool {
-	return f.Flags&0x1 == 1
-}
-
-func (f *FileHeader) isAE2() bool {
-	return f.ae == 2
 }
 
 // FileInfo returns an os.FileInfo for the FileHeader.

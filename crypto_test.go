@@ -7,10 +7,6 @@ import (
 	"testing"
 )
 
-func pwFn() []byte {
-	return []byte("golang")
-}
-
 // Test simple password reading.
 func TestPasswordReadSimple(t *testing.T) {
 	file := "hello-aes.zip"
@@ -30,7 +26,7 @@ func TestPasswordReadSimple(t *testing.T) {
 	if f.Method != 0 {
 		t.Errorf("Expected %s to have its Method set to 0.", file)
 	}
-	f.Password = pwFn
+	f.SetPassword("golang")
 	rc, err := f.Open()
 	if err != nil {
 		t.Errorf("Expected to open the readcloser: %v.", err)
@@ -45,6 +41,7 @@ func TestPasswordReadSimple(t *testing.T) {
 }
 
 // Test for multi-file password protected zip.
+// Each file can be protected with a different password.
 func TestPasswordHelloWorldAes(t *testing.T) {
 	file := "world-aes.zip"
 	expecting := "helloworld"
@@ -61,7 +58,7 @@ func TestPasswordHelloWorldAes(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected %s to be encrypted.", f.FileInfo().Name)
 		}
-		f.Password = pwFn
+		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected to open readcloser: %v", err)
@@ -91,7 +88,7 @@ func TestPasswordMacbethAct1(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected %s to be encrypted.", f.Name)
 		}
-		f.Password = pwFn
+		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected to open readcloser: %v", err)
@@ -131,7 +128,7 @@ func TestPasswordAE1BadCRC(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected zip to be encrypted")
 		}
-		f.Password = pwFn
+		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected the readcloser to open.")
@@ -162,7 +159,7 @@ func TestPasswordTamperedData(t *testing.T) {
 		if !f.IsEncrypted() {
 			t.Errorf("Expected zip to be encrypted")
 		}
-		f.Password = pwFn
+		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
 			t.Errorf("Expected the readcloser to open.")
@@ -178,14 +175,9 @@ func TestPasswordWriteSimple(t *testing.T) {
 	contents := []byte("Hello World")
 	conLen := len(contents)
 
-	// Write a zip
-	fh := &FileHeader{
-		Name:     "hello.txt",
-		Password: pwFn,
-	}
 	raw := new(bytes.Buffer)
 	zipw := NewWriter(raw)
-	w, err := zipw.CreateHeader(fh)
+	w, err := zipw.Encrypt("hello.txt", "golang")
 	if err != nil {
 		t.Errorf("Expected to create a new FileHeader")
 	}
@@ -206,7 +198,7 @@ func TestPasswordWriteSimple(t *testing.T) {
 		t.Errorf("Expected to have one file in the zip archive, but has %d files", nn)
 	}
 	z := zipr.File[0]
-	z.Password = pwFn
+	z.SetPassword("golang")
 	rr, err := z.Open()
 	if err != nil {
 		t.Errorf("Expected to open the readcloser: %v", err)
