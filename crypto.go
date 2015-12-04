@@ -41,7 +41,6 @@ func aesKeyLen(strength byte) int {
 
 // Encryption/Decryption Errors
 var (
-	ErrEncryption     = errors.New("zip: encryption error")
 	ErrDecryption     = errors.New("zip: decryption error")
 	ErrPassword       = errors.New("zip: invalid password")
 	ErrAuthentication = errors.New("zip: authentication failed")
@@ -188,16 +187,16 @@ func (a *authReader) Read(p []byte) (int, error) {
 		a.err = err
 	}
 	// write any data to mac
-	nn, err := a.mac.Write(p[:n])
-	if nn != n || err != nil {
-		a.err = io.ErrUnexpectedEOF
+	_, err = a.mac.Write(p[:n])
+	if err != nil {
+		a.err = err
 		return n, a.err
 	}
 	if end {
 		ab := new(bytes.Buffer)
 		_, err = io.Copy(ab, a.adata)
 		if err != nil || ab.Len() != 10 {
-			a.err = io.ErrUnexpectedEOF
+			a.err = ErrDecryption
 			return n, a.err
 		}
 		if !a.checkAuthentication(ab.Bytes()) {
@@ -223,18 +222,21 @@ func (a *bufferedAuthReader) Read(b []byte) (int, error) {
 	if !a.auth {
 		_, err := io.Copy(a.buf, a.data)
 		if err != nil {
-			a.err = io.ErrUnexpectedEOF
+			a.err = err
 			return 0, a.err
 		}
-		ab := new(bytes.Buffer) // remove this buffer and io.Copy to mac
+		ab := new(bytes.Buffer)
 		nn, err := io.Copy(ab, a.adata)
-		if err != nil || nn != 10 {
-			a.err = io.ErrUnexpectedEOF
+		if err != nil {
+			a.err = err
+			return 0, a.err
+		} else if nn != 10 {
+			a.err = ErrDecryption
 			return 0, a.err
 		}
-		mn, err := a.mac.Write(a.buf.Bytes())
-		if mn != a.buf.Len() || err != nil {
-			a.err = io.ErrUnexpectedEOF
+		_, err = a.mac.Write(a.buf.Bytes())
+		if err != nil {
+			a.err = err
 			return 0, a.err
 		}
 		if !a.checkAuthentication(ab.Bytes()) {
@@ -254,7 +256,6 @@ func (a *authReader) checkAuthentication(authcode []byte) bool {
 	expectedAuthCode := a.mac.Sum(nil)
 	// Truncate at the first 10 bytes
 	expectedAuthCode = expectedAuthCode[:10]
-	// Change to use crypto/subtle for constant time comparison
 	a.auth = subtle.ConstantTimeCompare(expectedAuthCode, authcode) > 0
 	return a.auth
 }
@@ -280,20 +281,18 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	if saltLen == 0 {
 		return nil, ErrDecryption
 	}
-	// grab the salt, pwvv, data, and authcode
+	// grab the salt and pwvv
 	saltpwvv := make([]byte, saltLen+2)
 	if _, err := r.Read(saltpwvv); err != nil {
 		return nil, err
 	}
 	salt := saltpwvv[:saltLen]
 	pwvv := saltpwvv[saltLen : saltLen+2]
-	// generate keys
+	// generate keys only if we have a password
 	if f.password == nil {
 		return nil, ErrPassword
 	}
 	decKey, authKey, pwv := generateKeys(f.password(), salt, keyLen)
-	// check password verifier (pwv)
-	// Change to use crypto/subtle for constant time comparison
 	if !checkPasswordVerification(pwv, pwvv) {
 		return nil, ErrPassword
 	}
@@ -306,9 +305,7 @@ func newDecryptionReader(r *io.SectionReader, f *File) (io.Reader, error) {
 	data := io.NewSectionReader(r, dataOff, dataLen)
 	authOff := dataOff + dataLen
 	authcode := io.NewSectionReader(r, authOff, 10)
-	// setup auth reader, (buffered)/streaming
 	ar := newAuthReader(authKey, data, authcode, f.DeferAuth)
-	// return decryption reader
 	dr := decryptStream(decKey, ar)
 	if dr == nil {
 		return nil, ErrDecryption
@@ -342,12 +339,12 @@ func (aw *authWriter) Write(p []byte) (int, error) {
 
 // writes out the salt, pwv, and then the encrypted file data
 type encryptionWriter struct {
-	pwv   []byte    // password verification code to be written
-	salt  []byte    // salt to be written
+	pwv   []byte
+	salt  []byte
 	w     io.Writer // where to write the salt + pwv
 	es    io.Writer // where to write plaintext
 	first bool      // first write
-	err   error     // last error
+	err   error
 }
 
 func (ew *encryptionWriter) Write(p []byte) (int, error) {
@@ -372,7 +369,7 @@ func (ew *encryptionWriter) Write(p []byte) (int, error) {
 func encryptStream(key []byte, w io.Writer) (io.Writer, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, errors.New("zip: couldn't create AES cipher")
+		return nil, err
 	}
 	stream := newWinZipCTR(block)
 	writer := &cipher.StreamWriter{S: stream, W: w}
@@ -382,13 +379,13 @@ func encryptStream(key []byte, w io.Writer) (io.Writer, error) {
 // newEncryptionWriter returns an io.Writer that when written to, 1. writes
 // out the salt, 2. writes out pwv, and 3. writes out authenticated, encrypted
 // data. The authcode will be written out in fileWriter.close().
-func newEncryptionWriter(w io.Writer, fh *FileHeader, fw *fileWriter) (io.Writer, error) {
+func newEncryptionWriter(w io.Writer, password passwordFn, fw *fileWriter) (io.Writer, error) {
 	var salt [16]byte
 	_, err := rand.Read(salt[:])
 	if err != nil {
 		return nil, errors.New("zip: unable to generate random salt")
 	}
-	ekey, akey, pwv := generateKeys(fh.password(), salt[:], aes256)
+	ekey, akey, pwv := generateKeys(password(), salt[:], aes256)
 	fw.hmac = hmac.New(sha1.New, akey)
 	aw := &authWriter{
 		hmac: fw.hmac,
@@ -450,9 +447,11 @@ func (h *FileHeader) SetPassword(password string) {
 // as a byte slice
 type passwordFn func() []byte
 
-// Encrypt is similar to Create except that it will encrypt the file contents
-// using AES-256 with the given password. Must follow all the same constraints
-// as Create.
+// Encrypt adds a file to the zip file using the provided name.
+// It returns a Writer to which the file contents should be written. File
+// contents will be encrypted with AES-256 using the given password. The
+// file's contents must be written to the io.Writer before the next call
+// to Create, CreateHeader, or Close.
 func (w *Writer) Encrypt(name string, password string) (io.Writer, error) {
 	fh := &FileHeader{
 		Name:   name,

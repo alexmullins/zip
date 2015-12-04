@@ -232,9 +232,9 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 		// we have a password and need to encrypt.
 		fh.writeWinZipExtra()
 		fh.Method = 99 // ok to change, we've gotten the comp and wrote extra
-		ew, err := newEncryptionWriter(sw, fh, fw)
+		ew, err := newEncryptionWriter(sw, fh.password, fw)
 		if err != nil {
-			return nil, errors.New("zip: unable to create an encryption writer")
+			return nil, err
 		}
 		sw = ew
 	}
