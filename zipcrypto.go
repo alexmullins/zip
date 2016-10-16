@@ -99,7 +99,6 @@ func (z *zipCryptoWriter) Write(p []byte) (n int, err error) {
 		n += 12
 	}
 	z.w.Write(z.z.Encrypt(p))
-	//z.fw.FileHeader.CompressedSize += uint32(n)
 	return
 }
 

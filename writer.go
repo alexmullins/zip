@@ -332,7 +332,7 @@ func (w *fileWriter) close() error {
 	// update FileHeader
 	fh := w.header.FileHeader
 	// ae-2 we don't write out CRC
-	if !fh.IsEncrypted() {
+	if !fh.IsEncrypted() || fh.encryption == ZipStandardEncryption {
 		fh.CRC32 = w.crc32.Sum32()
 	}
 	fh.CompressedSize64 = uint64(w.compCount.count)
