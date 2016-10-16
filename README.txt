@@ -1,3 +1,6 @@
+This fork add support for Standard Zip Encryption.
+https://github.com/yeka/zip
+
 This is a fork of the Go archive/zip package to add support
 for reading/writing password protected .zip files.
 Only supports Winzip's AES extension: http://www.winzip.com/aes_info.htm.
