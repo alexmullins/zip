@@ -229,14 +229,22 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	// check for password
 	var sw io.Writer = fw.compCount
 	if fh.password != nil {
-		// we have a password and need to encrypt.
-		fh.writeWinZipExtra()
-		fh.Method = 99 // ok to change, we've gotten the comp and wrote extra
-		ew, err := newEncryptionWriter(sw, fh.password, fw, fh.aesStrength)
-		if err != nil {
-			return nil, err
+		if fh.encryption == ZipStandardEncryption {
+			ew, err := ZipCryptoEncryptor(sw, fh.password, fw)
+			if err != nil {
+				return nil, err
+			}
+			sw = ew
+		} else {
+			// we have a password and need to encrypt.
+			fh.writeWinZipExtra()
+			fh.Method = 99 // ok to change, we've gotten the comp and wrote extra
+			ew, err := newEncryptionWriter(sw, fh.password, fw, fh.aesStrength)
+			if err != nil {
+				return nil, err
+			}
+			sw = ew
 		}
-		sw = ew
 	}
 	var err error
 	fw.comp, err = comp(sw)
@@ -313,7 +321,7 @@ func (w *fileWriter) close() error {
 		return err
 	}
 	// if encrypted grab the hmac and write it out
-	if w.header.IsEncrypted() {
+	if w.header.IsEncrypted() && w.header.encryption != ZipStandardEncryption {
 		authCode := w.hmac.Sum(nil)
 		authCode = authCode[:10]
 		_, err := w.compCount.Write(authCode)
