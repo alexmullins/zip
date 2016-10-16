@@ -175,42 +175,44 @@ func TestPasswordWriteSimple(t *testing.T) {
 	contents := []byte("Hello World")
 	conLen := len(contents)
 
-	raw := new(bytes.Buffer)
-	zipw := NewWriter(raw)
-	w, err := zipw.Encrypt("hello.txt", "golang")
-	if err != nil {
-		t.Errorf("Expected to create a new FileHeader")
-	}
-	n, err := io.Copy(w, bytes.NewReader(contents))
-	if err != nil || n != int64(conLen) {
-		t.Errorf("Expected to write the full contents to the writer.")
-	}
-	zipw.Close()
+	for _, enc := range []EncryptionMethod{AES128Encryption, AES192Encryption, AES256Encryption} {
+		raw := new(bytes.Buffer)
+		zipw := NewWriter(raw)
+		w, err := zipw.Encrypt("hello.txt", "golang", enc)
+		if err != nil {
+			t.Errorf("Expected to create a new FileHeader")
+		}
+		n, err := io.Copy(w, bytes.NewReader(contents))
+		if err != nil || n != int64(conLen) {
+			t.Errorf("Expected to write the full contents to the writer.")
+		}
+		zipw.Close()
 
-	// Read the zip
-	buf := new(bytes.Buffer)
-	zipr, err := NewReader(bytes.NewReader(raw.Bytes()), int64(raw.Len()))
-	if err != nil {
-		t.Errorf("Expected to open a new zip reader: %v", err)
-	}
-	nn := len(zipr.File)
-	if nn != 1 {
-		t.Errorf("Expected to have one file in the zip archive, but has %d files", nn)
-	}
-	z := zipr.File[0]
-	z.SetPassword("golang")
-	rr, err := z.Open()
-	if err != nil {
-		t.Errorf("Expected to open the readcloser: %v", err)
-	}
-	n, err = io.Copy(buf, rr)
-	if err != nil {
-		t.Errorf("Expected to write to temporary buffer: %v", err)
-	}
-	if n != int64(conLen) {
-		t.Errorf("Expected to copy %d bytes to temp buffer, but copied %d bytes instead", conLen, n)
-	}
-	if !bytes.Equal(contents, buf.Bytes()) {
-		t.Errorf("Expected the unzipped contents to equal '%s', but was '%s' instead", contents, buf.Bytes())
+		// Read the zip
+		buf := new(bytes.Buffer)
+		zipr, err := NewReader(bytes.NewReader(raw.Bytes()), int64(raw.Len()))
+		if err != nil {
+			t.Errorf("Expected to open a new zip reader: %v", err)
+		}
+		nn := len(zipr.File)
+		if nn != 1 {
+			t.Errorf("Expected to have one file in the zip archive, but has %d files", nn)
+		}
+		z := zipr.File[0]
+		z.SetPassword("golang")
+		rr, err := z.Open()
+		if err != nil {
+			t.Errorf("Expected to open the readcloser: %v", err)
+		}
+		n, err = io.Copy(buf, rr)
+		if err != nil {
+			t.Errorf("Expected to write to temporary buffer: %v", err)
+		}
+		if n != int64(conLen) {
+			t.Errorf("Expected to copy %d bytes to temp buffer, but copied %d bytes instead", conLen, n)
+		}
+		if !bytes.Equal(contents, buf.Bytes()) {
+			t.Errorf("Expected the unzipped contents to equal '%s', but was '%s' instead", contents, buf.Bytes())
+		}
 	}
 }

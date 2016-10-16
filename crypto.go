@@ -19,7 +19,14 @@ import (
 	"golang.org/x/crypto/pbkdf2"
 )
 
+type EncryptionMethod int
+
 const (
+	ZipStandardEncryption EncryptionMethod = 1
+	AES128Encryption EncryptionMethod = 2
+	AES192Encryption EncryptionMethod = 3
+	AES256Encryption EncryptionMethod = 4
+
 	// AES key lengths
 	aes128 = 16
 	aes192 = 24
@@ -379,13 +386,14 @@ func encryptStream(key []byte, w io.Writer) (io.Writer, error) {
 // newEncryptionWriter returns an io.Writer that when written to, 1. writes
 // out the salt, 2. writes out pwv, and 3. writes out authenticated, encrypted
 // data. The authcode will be written out in fileWriter.close().
-func newEncryptionWriter(w io.Writer, password passwordFn, fw *fileWriter) (io.Writer, error) {
-	var salt [16]byte
+func newEncryptionWriter(w io.Writer, password passwordFn, fw *fileWriter, aesstrength byte) (io.Writer, error) {
+	keysize := aesKeyLen(aesstrength)
+	salt := make([]byte, keysize / 2)
 	_, err := rand.Read(salt[:])
 	if err != nil {
 		return nil, errors.New("zip: unable to generate random salt")
 	}
-	ekey, akey, pwv := generateKeys(password(), salt[:], aes256)
+	ekey, akey, pwv := generateKeys(password(), salt[:], keysize)
 	fw.hmac = hmac.New(sha1.New, akey)
 	aw := &authWriter{
 		hmac: fw.hmac,
@@ -424,9 +432,21 @@ func (h *FileHeader) writeWinZipExtra() {
 	eb.uint16(7)                // following data size is 7
 	eb.uint16(2)                // ae 2
 	eb.uint16(0x4541)           // "AE"
-	eb.uint8(3)                 // aes256
+	eb.uint8(h.aesStrength)     // aes256
 	eb.uint16(h.Method)         // original compression method
 	h.Extra = append(h.Extra, buf[:]...)
+}
+
+func (h *FileHeader) setEncryptionMethod(enc EncryptionMethod) {
+	h.encryption = enc
+	switch enc {
+	case AES128Encryption:
+		h.aesStrength = 1
+	case AES192Encryption:
+		h.aesStrength = 2
+	case AES256Encryption:
+		h.aesStrength = 3
+	}
 }
 
 func (h *FileHeader) setEncryptionBit() {
@@ -452,11 +472,12 @@ type passwordFn func() []byte
 // contents will be encrypted with AES-256 using the given password. The
 // file's contents must be written to the io.Writer before the next call
 // to Create, CreateHeader, or Close.
-func (w *Writer) Encrypt(name string, password string) (io.Writer, error) {
+func (w *Writer) Encrypt(name string, password string, enc EncryptionMethod) (io.Writer, error) {
 	fh := &FileHeader{
 		Name:   name,
 		Method: Deflate,
 	}
 	fh.SetPassword(password)
+	fh.setEncryptionMethod(enc)
 	return w.CreateHeader(fh)
 }
