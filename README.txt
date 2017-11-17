@@ -22,6 +22,38 @@ The process
 1. hello.txt -> compressed -> encrypted -> .zip
 2. .zip -> decrypted -> decompressed -> hello.txt
 
+Example Encrypt zip
+==========
+```
+package main
+
+import (
+	"bytes"
+	"log"
+	"os"
+	"github.com/alexmullins/zip"
+)
+
+func main() {
+	contents := []byte("Hello World")
+	fzip, err := os.Create(`./test.zip`)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	zipw := zip.NewWriter(fzip)
+	defer zipw.Close()
+	w, err := zipw.Encrypt(`test.txt`, `golang`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = io.Copy(w, bytes.NewReader(contents))
+	if err != nil {
+		log.Fatal(err)
+	}
+	zipw.Flush()
+}
+```
+
 WinZip AES specifies
 =====================
 1. Encryption-Decryption w/ AES-CTR (128, 192, or 256 bits)
