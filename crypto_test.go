@@ -175,7 +175,7 @@ func TestPasswordWriteSimple(t *testing.T) {
 	contents := []byte("Hello World")
 	conLen := len(contents)
 
-	for _, enc := range []EncryptionMethod{ZipStandardEncryption, AES128Encryption, AES192Encryption, AES256Encryption} {
+	for _, enc := range []EncryptionMethod{StandardEncryption, AES128Encryption, AES192Encryption, AES256Encryption} {
 		raw := new(bytes.Buffer)
 		zipw := NewWriter(raw)
 		w, err := zipw.Encrypt("hello.txt", "golang", enc)
@@ -223,7 +223,7 @@ func TestZipCrypto(t *testing.T) {
 
 	raw := new(bytes.Buffer)
 	zipw := NewWriter(raw)
-	w, err := zipw.Encrypt("hello.txt", "golang", ZipStandardEncryption)
+	w, err := zipw.Encrypt("hello.txt", "golang", StandardEncryption)
 	if err != nil {
 		t.Errorf("Expected to create a new FileHeader")
 	}

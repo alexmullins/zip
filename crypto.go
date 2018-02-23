@@ -22,10 +22,10 @@ import (
 type EncryptionMethod int
 
 const (
-	ZipStandardEncryption EncryptionMethod = 1
-	AES128Encryption EncryptionMethod = 2
-	AES192Encryption EncryptionMethod = 3
-	AES256Encryption EncryptionMethod = 4
+	StandardEncryption EncryptionMethod = 1
+	AES128Encryption   EncryptionMethod = 2
+	AES192Encryption   EncryptionMethod = 3
+	AES256Encryption   EncryptionMethod = 4
 
 	// AES key lengths
 	aes128 = 16

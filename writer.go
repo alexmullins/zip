@@ -229,7 +229,7 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	// check for password
 	var sw io.Writer = fw.compCount
 	if fh.password != nil {
-		if fh.encryption == ZipStandardEncryption {
+		if fh.encryption == StandardEncryption {
 			ew, err := ZipCryptoEncryptor(sw, fh.password, fw)
 			if err != nil {
 				return nil, err
@@ -321,7 +321,7 @@ func (w *fileWriter) close() error {
 		return err
 	}
 	// if encrypted grab the hmac and write it out
-	if w.header.IsEncrypted() && w.header.encryption != ZipStandardEncryption {
+	if w.header.IsEncrypted() && w.header.encryption != StandardEncryption {
 		authCode := w.hmac.Sum(nil)
 		authCode = authCode[:10]
 		_, err := w.compCount.Write(authCode)
@@ -332,7 +332,7 @@ func (w *fileWriter) close() error {
 	// update FileHeader
 	fh := w.header.FileHeader
 	// ae-2 we don't write out CRC
-	if !fh.IsEncrypted() || fh.encryption == ZipStandardEncryption {
+	if !fh.IsEncrypted() || fh.encryption == StandardEncryption {
 		fh.CRC32 = w.crc32.Sum32()
 	}
 	fh.CompressedSize64 = uint64(w.compCount.count)
