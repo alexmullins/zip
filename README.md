@@ -3,7 +3,6 @@ This fork add support for Standard Zip Encryption.
 The work is based on https://github.com/alexmullins/zip
 
 Available encryption:
-
 ```
 zip.StandardEncryption
 zip.AES128Encryption
@@ -90,3 +89,61 @@ func main() {
 	}
 }
 ```
+
+### fileheader
+
+```
+
+func  StepDealZip(tmpFilesForZip []string, zipFilePath string, job YellowDogJob) (err error) {
+	archive, err := os.Create(zipFilePath)
+	if err != nil {
+		return err
+	}
+	defer archive.Close()
+	zipWriter := zip.NewWriter(archive)
+	for _, file := range tmpFilesForZip {
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			return err
+		}
+		body, err := ioutil.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		var filename string
+		fileNameSplit := strings.Split(fileInfo.Name(), ".")
+		if fileNameSplit[2] == `pdf` {
+			filename = "报表_" + fileNameSplit[1] + `.pdf`
+		} else {
+			for _, values := range job.RptTableDict {
+				if values.Dish == fileNameSplit[0] {
+					filename = fileNameSplit[1] + `_` + values.DishHuman + `.xlsx`
+				}
+			}
+		}
+		header := &zip.FileHeader{
+			Name:   filename,
+			Flags:  1 << 11, // 使用utf8编码
+			Method: zip.Deflate,
+		}
+		if job.RptPwd != `` {
+			header.SetPassword(job.RptPwd)
+			header.SetEncryptionMethod(zip.StandardEncryption)
+		}
+		f, err := zipWriter.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+		_, err = f.Write([]byte(body))
+		if err != nil {
+			return err
+		}
+	}
+	if err = zipWriter.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+```
+
