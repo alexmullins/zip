@@ -90,7 +90,7 @@ func main() {
 }
 ```
 
-### fileheader
+### fileheader 设置文件的编码格式
 
 ```
 
