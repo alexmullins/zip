@@ -101,6 +101,7 @@ type FileHeader struct {
 	// https://www.imperialviolet.org/2015/05/16/aeads.html
 	DeferAuth bool
 
+	encryption  EncryptionMethod
 	password    passwordFn // Returns the password to use when reading/writing
 	ae          uint16
 	aesStrength byte
