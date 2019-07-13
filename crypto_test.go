@@ -56,7 +56,7 @@ func TestPasswordHelloWorldAes(t *testing.T) {
 	var b bytes.Buffer
 	for _, f := range r.File {
 		if !f.IsEncrypted() {
-			t.Errorf("Expected %s to be encrypted.", f.FileInfo().Name)
+			t.Errorf("Expected %s to be encrypted.", f.FileInfo().Name())
 		}
 		f.SetPassword("golang")
 		rc, err := f.Open()
