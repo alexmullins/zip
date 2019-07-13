@@ -388,7 +388,7 @@ func encryptStream(key []byte, w io.Writer) (io.Writer, error) {
 // data. The authcode will be written out in fileWriter.close().
 func newEncryptionWriter(w io.Writer, password passwordFn, fw *fileWriter, aesstrength byte) (io.Writer, error) {
 	keysize := aesKeyLen(aesstrength)
-	salt := make([]byte, keysize / 2)
+	salt := make([]byte, keysize/2)
 	_, err := rand.Read(salt[:])
 	if err != nil {
 		return nil, errors.New("zip: unable to generate random salt")
@@ -428,7 +428,7 @@ func (h *FileHeader) writeWinZipExtra() {
 	// total size is 11 bytes
 	var buf [11]byte
 	eb := writeBuf(buf[:])
-	eb.uint16(winzipAesExtraId) // 0x9901
+	eb.uint16(winzipAesExtraID) // 0x9901
 	eb.uint16(7)                // following data size is 7
 	eb.uint16(2)                // ae 2
 	eb.uint16(0x4541)           // "AE"

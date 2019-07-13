@@ -13,7 +13,7 @@ func TestPasswordReadSimple(t *testing.T) {
 	var buf bytes.Buffer
 	r, err := OpenReader(filepath.Join("testdata", file))
 	if err != nil {
-		t.Errorf("Expected %s to open: %v.", file, err)
+		t.Fatalf("Expected %s to open: %v.", file, err)
 	}
 	defer r.Close()
 	if len(r.File) != 1 {
@@ -29,7 +29,7 @@ func TestPasswordReadSimple(t *testing.T) {
 	f.SetPassword("golang")
 	rc, err := f.Open()
 	if err != nil {
-		t.Errorf("Expected to open the readcloser: %v.", err)
+		t.Fatalf("Expected to open the readcloser: %v.", err)
 	}
 	_, err = io.Copy(&buf, rc)
 	if err != nil {
@@ -61,7 +61,7 @@ func TestPasswordHelloWorldAes(t *testing.T) {
 		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
-			t.Errorf("Expected to open readcloser: %v", err)
+			t.Fatalf("Expected to open readcloser: %v", err)
 		}
 		defer rc.Close()
 		if _, err := io.Copy(&b, rc); err != nil {
@@ -91,7 +91,7 @@ func TestPasswordMacbethAct1(t *testing.T) {
 		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
-			t.Errorf("Expected to open readcloser: %v", err)
+			t.Fatalf("Expected to open readcloser: %v", err)
 		}
 		defer rc.Close()
 		if _, err := io.Copy(&b, rc); err != nil {
@@ -131,7 +131,7 @@ func TestPasswordAE1BadCRC(t *testing.T) {
 		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
-			t.Errorf("Expected the readcloser to open.")
+			t.Fatalf("Expected the readcloser to open.")
 		}
 		defer rc.Close()
 		if _, err := io.Copy(buf, rc); err != ErrChecksum {
@@ -162,7 +162,7 @@ func TestPasswordTamperedData(t *testing.T) {
 		f.SetPassword("golang")
 		rc, err := f.Open()
 		if err != nil {
-			t.Errorf("Expected the readcloser to open.")
+			t.Fatalf("Expected the readcloser to open.")
 		}
 		defer rc.Close()
 		if _, err := io.Copy(buf, rc); err != ErrAuthentication {

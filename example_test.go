@@ -6,12 +6,13 @@ package zip_test
 
 import (
 	"bytes"
+	"compress/flate"
 	"fmt"
 	"io"
 	"log"
 	"os"
 
-	"github.com/yeka/zip"
+	"github.com/hillu/go-archive-zip-crypto"
 )
 
 func ExampleWriter() {
@@ -73,6 +74,23 @@ func ExampleReader() {
 	// Output:
 	// Contents of README:
 	// This is the source code repository for the Go programming language.
+}
+
+func ExampleWriter_RegisterCompressor() {
+	// Override the default Deflate compressor with a higher compression level.
+
+	// Create a buffer to write our archive to.
+	buf := new(bytes.Buffer)
+
+	// Create a new zip archive.
+	w := zip.NewWriter(buf)
+
+	// Register a custom Deflate compressor.
+	w.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(out, flate.BestCompression)
+	})
+
+	// Proceed to add files to w.
 }
 
 func ExampleWriter_Encrypt() {

@@ -1,92 +1,14 @@
-This fork add support for Standard Zip Encryption.
+# Go `archive/zip` plus encryption support
 
-The work is based on https://github.com/alexmullins/zip
+[![GoDoc](https://godoc.org/github.com/hillu/go-archive-zip-crypto?status.svg)](https://godoc.org/github.com/hillu/go-archive-zip-crypto)
+[![Go Report Card](https://goreportcard.com/badge/github.com/hillu/go-archive-zip-crypto)](https://goreportcard.com/report/github.com/hillu/go-archive-zip-crypto)
 
-Available encryption:
+This is a fork of the `archive/zip` package from the Go standard
+library which adds support for both the legacy
+(insecure) ZIP encryption scheme and for newer AES-based encryption
+schemes introduced with WinZip. It is based on Go 1.12.7.
 
-```
-zip.StandardEncryption
-zip.AES128Encryption
-zip.AES192Encryption
-zip.AES256Encryption
-```
-
-## Warning
-
-Zip Standard Encryption isn't actually secure.
-Unless you have to work with it, please use AES encryption instead.
-
-## Example Encrypt Zip
-
-```
-package main
-
-import (
-	"bytes"
-	"io"
-	"log"
-	"os"
-
-	"github.com/yeka/zip"
-)
-
-func main() {
-	contents := []byte("Hello World")
-	fzip, err := os.Create(`./test.zip`)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	zipw := zip.NewWriter(fzip)
-	defer zipw.Close()
-	w, err := zipw.Encrypt(`test.txt`, `golang`, zip.AES256Encryption)
-	if err != nil {
-		log.Fatal(err)
-	}
-	_, err = io.Copy(w, bytes.NewReader(contents))
-	if err != nil {
-		log.Fatal(err)
-	}
-	zipw.Flush()
-}
-```
-
-## Example Decrypt Zip
-
-```
-package main
-
-import (
-	"fmt"
-	"io/ioutil"
-	"log"
-
-	"github.com/yeka/zip"
-)
-
-func main() {
-	r, err := zip.OpenReader("encrypted.zip")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		if f.IsEncrypted() {
-			f.SetPassword("12345")
-		}
-
-		r, err := f.Open()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		buf, err := ioutil.ReadAll(r)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer r.Close()
-
-		fmt.Printf("Size of %v: %v byte(s)\n", f.Name, len(buf))
-	}
-}
-```
+This is based on work by [Alex Mullins](https://github.com/alexmullins/zip) and
+[Yakub Kristianto](https://github.com/yeka/zip). The forward-port was done to
+introduce bugfixes and enhancements, such as missing support for large
+(>= 4GB) ZIP files like those distributed by [VirusShare](https://virusshare.com/).
