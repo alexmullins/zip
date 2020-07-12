@@ -6,7 +6,7 @@
 This is a fork of the `archive/zip` package from the Go standard
 library which adds support for both the legacy
 (insecure) ZIP encryption scheme and for newer AES-based encryption
-schemes introduced with WinZip. It is based on Go 1.12.7.
+schemes introduced with WinZip. It is based on Go 1.14.
 
 This is based on work by [Alex Mullins](https://github.com/alexmullins/zip) and
 [Yakub Kristianto](https://github.com/yeka/zip). The forward-port was done to
