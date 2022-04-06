@@ -11,6 +11,7 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
+	"unicode/utf8"
 )
 
 // TODO(adg): support zip file comments
@@ -192,6 +193,29 @@ func (w *Writer) Create(name string) (io.Writer, error) {
 	return w.CreateHeader(header)
 }
 
+// detectUTF8 reports whether s is a valid UTF-8 string, and whether the string
+// must be considered UTF-8 encoding (i.e., not compatible with CP-437, ASCII,
+// or any other common encoding).
+func detectUTF8(s string) (valid, require bool) {
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+		// Officially, ZIP uses CP-437, but many readers use the system's
+		// local character encoding. Most encoding are compatible with a large
+		// subset of CP-437, which itself is ASCII-like.
+		//
+		// Forbid 0x7e and 0x5c since EUC-KR and Shift-JIS replace those
+		// characters with localized currency and overline characters.
+		if r < 0x20 || r > 0x7d || r == 0x5c {
+			if !utf8.ValidRune(r) || (r == utf8.RuneError && size == 1) {
+				return false, false
+			}
+			require = true
+		}
+	}
+	return true, require
+}
+
 // CreateHeader adds a file to the zip file using the provided FileHeader
 // for the file metadata.
 // It returns a Writer to which the file contents should be written.
@@ -211,6 +235,13 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	}
 
 	fh.Flags |= 0x8 // we will write a data descriptor
+
+	//Checking utf8 encoding
+	utf8Valid1, utf8Require1 := detectUTF8(fh.Name)
+	utf8Valid2, utf8Require2 := detectUTF8(fh.Comment)
+	if (utf8Require1 || utf8Require2) && (utf8Valid1 && utf8Valid2) {
+		fh.Flags |= 0x800
+	}
 	// TODO(alex): Look at spec and see if these need to be changed
 	// when using encryption.
 	fh.CreatorVersion = fh.CreatorVersion&0xff00 | zipVersion20 // preserve compatibility byte
